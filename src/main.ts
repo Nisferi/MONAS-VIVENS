@@ -1,12 +1,9 @@
 /**
- * Точка входа. Шаги 1–4 плана сборки (docs/design/10-mvp-plan.md):
- * поле, Ме, Φ и линзы, детерминированное будущее.
- *
- * Цикл: фиксированный шаг логики (10 тиков/сек × множитель скорости),
- * отрисовка — в rAF. Прогноз — в Web Worker, тем же tick().
+ * Точка входа: полная петля партии (шаги 1–7 плана сборки).
+ * Старт (биом × архетип × seed) → Genesis → Морфогенез → Разум →
+ * Нейкос-шторм → развязка → концовка + летопись + счёт.
  */
 import { Cell, GRID_H, GRID_W, createWorld, type WorldState } from './core/grid';
-import { hashSeed } from './core/rng';
 import { DEFAULT_ME, tick, type Me } from './core/rules';
 import { Forecaster } from './future/forecast';
 import { horizonTicks } from './future/horizon';
@@ -14,69 +11,208 @@ import { LensSwitcher } from './lens/switcher';
 import { ClusterTracker, type Cluster } from './phi/clusters';
 import { NeikosMeter } from './phi/neikos';
 import { computePhi, type PhiReport } from './phi/phi';
+import { initPwa } from './platform/pwa';
+import { loadBest, loadSetup, saveBest, saveSetup } from './platform/storage';
+import { initTelegram } from './platform/telegram';
+import { writeChronicle, type Milestones } from './run/chronicle';
+import { decideEnding } from './run/endings';
+import { computeScore } from './run/score';
+import { makeRun, type RunConfig } from './run/setup';
+import { STAGE_NAMES, SURVIVAL_THRESHOLD, currentStage, endTick } from './run/stages';
+import { TabletEngine } from './tablets/engine';
 import { FieldRenderer } from './ui/canvas';
 import { Hud } from './ui/hud';
+import { Screens } from './ui/screens';
+import { TabletUI } from './ui/tabletUI';
 
 const TICKS_PER_SECOND = 10;
 const TICK_MS = 1000 / TICKS_PER_SECOND;
-const START_DENSITY = 0.18;
 const ZOOM_STEP = 1.5;
-/** Как часто (в тиках) обновлять прогноз будущего. */
 const FORECAST_EVERY = 8;
 const SPEEDS = [1, 2, 4] as const;
 
+initTelegram();
+initPwa();
+
 const canvas = document.getElementById('field') as HTMLCanvasElement;
 
-let seedText = String(Date.now());
+// ---- Состояние партии ----
+
+let cfg: RunConfig = makeRun('0', 'swamp', 'clay');
 let me: Me = { ...DEFAULT_ME };
-let world: WorldState = createWorld(hashSeed(seedText), START_DENSITY);
+let world: WorldState = createWorld(0, 0.18);
+let running = false;
 let paused = false;
 let speedIdx = 0;
 let brush = false;
+let meEdits = 0;
+let horizonMax = 0;
 
-// Измерение сознания: кластеры → члены формулы → Φ.
 const tracker = new ClusterTracker();
 const neikosMeter = new NeikosMeter();
 const lenses = new LensSwitcher();
 const forecaster = new Forecaster();
+const tabletEngine = new TabletEngine();
 let clusters: Cluster[] = [];
 let report: PhiReport = computePhi([], 0);
 let lastForecastBase = -1;
+
+const milestones: Milestones = {
+  firstFormTick: null,
+  mindTick: null,
+  threatTick: 0,
+  tabletsFired: [],
+  finalTick: 0,
+  finalPhi: 0,
+};
+
+function horizonNow(): number {
+  return Math.round(horizonTicks(report.phi) * cfg.horizonScale);
+}
 
 function measure(): void {
   clusters = tracker.update(world);
   const neikos = neikosMeter.update(tracker.events);
   report = computePhi(clusters, neikos);
+
   const unlockEvent = lenses.update(clusters, report.phi);
   if (unlockEvent) {
-    hud.setLensUnlocked(2, true);
-    if (lenses.unlocked3) hud.setLensUnlocked(3, true);
+    if (lenses.unlocked2 && milestones.firstFormTick === null) {
+      milestones.firstFormTick = world.tick;
+      hud.setLensUnlocked(2, true);
+    }
+    if (lenses.unlocked3 && milestones.mindTick === null) {
+      milestones.mindTick = world.tick;
+      hud.setLensUnlocked(3, true);
+      tabletUI.setUnlocked(true);
+    }
     hud.toast(unlockEvent);
+  }
+
+  if (lenses.unlocked3) horizonMax = Math.max(horizonMax, horizonNow());
+
+  // Таблички: спящие правила проверяются каждый тик.
+  for (const msg of tabletEngine.update(world, clusters, report)) {
+    hud.toast(msg);
+    tabletUI.refresh();
+    forecaster.invalidate();
   }
 }
 
-/** Прогноз пересчитывается периодически и после любого вмешательства. */
 function refreshForecast(force = false): void {
   if (!lenses.unlocked3) return;
   if (!force && world.tick - lastForecastBase < FORECAST_EVERY) return;
-  if (forecaster.request(world, me, horizonTicks(report.phi))) {
+  if (forecaster.request(world, me, horizonNow())) {
     lastForecastBase = world.tick;
   }
 }
 
-function restart(): void {
-  seedText = String(Date.now());
-  world = createWorld(hashSeed(seedText), START_DENSITY);
+// ---- Старт и финал партии ----
+
+function startRun(seedText: string, biome: RunConfig['biome'], archetype: RunConfig['archetype']): void {
+  cfg = makeRun(seedText, biome, archetype);
+  saveSetup({ biome, archetype });
+  me = { ...cfg.me };
+  world = createWorld(cfg.seed, cfg.density, cfg.startEnergy);
+
   tracker.reset();
   neikosMeter.reset();
+  lenses.reset();
+  lenses.mindPhi = cfg.mindPhi;
+  tabletEngine.reset();
   forecaster.invalidate();
   lastForecastBase = -1;
+  meEdits = 0;
+  horizonMax = 0;
+  speedIdx = 0;
+  brush = false;
+  paused = false;
+
+  milestones.firstFormTick = null;
+  milestones.mindTick = null;
+  milestones.threatTick = me.threatTick;
+  milestones.tabletsFired = [];
+
+  hud.markLens(1);
+  hud.setLensUnlocked(2, false);
+  hud.setLensUnlocked(3, false);
+  hud.applyPause(false);
+  hud.applyBrush(false);
+  tabletUI.setUnlocked(false);
+  tabletUI.refresh();
+  renderer.resetView();
+
+  measure();
+  running = true;
+  hud.toast('Мир сотворён. Начертай Ме — и жди, когда форма устоит.');
 }
 
+function aliveSeeds(): number {
+  let n = 0;
+  for (let i = 0; i < world.cells.length; i++) {
+    if (world.cells[i] === Cell.Seed) n++;
+  }
+  return n;
+}
+
+function finishRun(): void {
+  running = false;
+  const survived = aliveSeeds() >= SURVIVAL_THRESHOLD;
+
+  milestones.finalTick = world.tick;
+  milestones.finalPhi = report.phi;
+  milestones.tabletsFired = [...tabletEngine.firedLog];
+
+  const ending = decideEnding({
+    survived,
+    phi: report.phi,
+    neikos: report.neikos,
+    philia: report.philia,
+    sawFuture: milestones.mindTick !== null && milestones.mindTick < me.threatTick,
+    tabletsCarved: tabletEngine.carvedCount,
+    tabletsFired: tabletEngine.firedCount,
+  });
+
+  const score = computeScore({
+    phi: report.phi,
+    survived,
+    horizonMax,
+    neikos: report.neikos,
+    chaos: report.chaos,
+    ending,
+    meEdits,
+    tabletsCarved: tabletEngine.carvedCount,
+  });
+
+  const isRecord = saveBest(score);
+  const chronicle = writeChronicle(milestones, ending, cfg);
+
+  screens.showFinal(
+    { ending, score, best: Math.max(score, loadBest()), isRecord, chronicle, seedText: cfg.seedText },
+    showStart,
+  );
+}
+
+/** Гибель мира фиксируется не мгновенно — даём шанс на возрождение. */
+let lowAliveTicks = 0;
+
+function checkEnd(): void {
+  const alive = aliveSeeds();
+  lowAliveTicks = alive < 5 ? lowAliveTicks + 1 : 0;
+  if (world.tick >= endTick(me) || lowAliveTicks > 50) finishRun();
+}
+
+// ---- UI ----
+
 const renderer = new FieldRenderer(canvas);
+const screens = new Screens();
+
 const hud = new Hud(me, {
   onMeChange(next) {
-    me = next;
+    // Поля энергии и угрозы ползунками не трогаются — переносим из текущих Ме.
+    me = { ...me, birthMin: next.birthMin, birthMax: next.birthMax,
+      surviveMin: next.surviveMin, surviveMax: next.surviveMax, ashLifetime: next.ashLifetime };
+    meEdits++;
     forecaster.invalidate();
     refreshForecast(true);
   },
@@ -84,7 +220,10 @@ const hud = new Hud(me, {
     paused = !paused;
     return paused;
   },
-  onReseed: restart,
+  onReseed() {
+    if (running) finishRun();
+    else showStart();
+  },
   onZoomIn: () => renderer.zoomAt(ZOOM_STEP, window.innerWidth / 2, window.innerHeight / 2),
   onZoomOut: () => renderer.zoomAt(1 / ZOOM_STEP, window.innerWidth / 2, window.innerHeight / 2),
   onViewReset: () => renderer.resetView(),
@@ -103,21 +242,30 @@ const hud = new Hud(me, {
   },
 });
 
-measure();
+const tabletUI = new TabletUI(document.getElementById('mepanel') as HTMLElement, tabletEngine, {
+  onCarve(condition, action) {
+    const err = tabletEngine.carve(condition, action, world);
+    if (err) hud.toast(err);
+    else hud.toast('Табличка высечена. Она спит и ждёт своего часа.');
+    return err;
+  },
+});
 
-// ---- Кисть посева: вмешательство руки в мир ----
+function showStart(): void {
+  const saved = loadSetup();
+  screens.showStart(
+    { biome: saved?.biome ?? 'swamp', archetype: saved?.archetype ?? 'clay' },
+    loadBest(),
+    (choice) => startRun(choice.seedText, choice.biome, choice.archetype),
+  );
+}
+
+// ---- Кисть посева ----
 
 function sowAt(cssX: number, cssY: number): void {
   const c = renderer.cellAt(cssX, cssY);
   if (!c) return;
-  // Сеем крестом 5 клеток — одинокое Семя умирает мгновенно.
-  const spots = [
-    [0, 0],
-    [1, 0],
-    [-1, 0],
-    [0, 1],
-    [0, -1],
-  ] as const;
+  const spots = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const;
   for (const [dx, dy] of spots) {
     const x = (c.x + dx + GRID_W) % GRID_W;
     const y = (c.y + dy + GRID_H) % GRID_H;
@@ -195,6 +343,7 @@ canvas.addEventListener('pointercancel', dropPointer);
 
 window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
   switch (e.code) {
     case 'Space':
       e.preventDefault();
@@ -224,19 +373,19 @@ window.addEventListener('keydown', (e) => {
 
 let lastTime = performance.now();
 let accumulator = 0;
+let lastStage = '';
 
 function frame(now: number): void {
   accumulator += now - lastTime;
   lastTime = now;
-
-  // Не даём накопиться долгу после сворачивания вкладки.
   if (accumulator > 1000) accumulator = 1000;
 
-  const stepMs = TICK_MS / (SPEEDS[speedIdx] as number);
-  if (!paused) {
-    while (accumulator >= stepMs) {
+  if (running && !paused) {
+    const stepMs = TICK_MS / (SPEEDS[speedIdx] as number);
+    while (accumulator >= stepMs && running) {
       world = tick(world, me);
       measure();
+      checkEnd();
       accumulator -= stepMs;
     }
     refreshForecast();
@@ -244,13 +393,20 @@ function frame(now: number): void {
     accumulator = 0;
   }
 
-  // Призрак будущего показываем только в линзе Разума.
+  const stage = currentStage(world, me, lenses.unlocked2, lenses.unlocked3);
+  if (running && STAGE_NAMES[stage] !== lastStage) {
+    if (stage === 'crisis') hud.toast('Нейкос приближается. Шторм начался.');
+    if (stage === 'aftermath') hud.toast('Шторм прошёл. Мир считает выживших.');
+    lastStage = STAGE_NAMES[stage];
+  }
+
   const f = forecaster.latest;
   renderer.setFuture(lenses.current === 3 && f ? f.cells : null);
 
   renderer.render(world, lenses.current, clusters);
-  hud.update(world, report, lenses.unlocked3 ? horizonTicks(report.phi) : null);
+  hud.update(world, report, lenses.unlocked3 ? horizonNow() : null, STAGE_NAMES[stage]);
   requestAnimationFrame(frame);
 }
 
+showStart();
 requestAnimationFrame(frame);

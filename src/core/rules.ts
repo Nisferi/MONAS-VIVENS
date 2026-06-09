@@ -6,9 +6,10 @@
  * Поле тороидальное: край сворачивается на противоположный — у мира нет
  * стены, только замкнутость (Сфайрос пространства).
  */
+import { STARVATION_LEVEL, nextEnergy } from './energy';
 import { Cell, GRID_H, GRID_W, type WorldState, cloneWorld } from './grid';
 
-/** Ме — ползунки законов, которые крутит игрок (линза 1). */
+/** Ме — божественные законы мира: соседство, энергия, заложенная судьбой угроза. */
 export interface Me {
   /** Рождение: пустая клетка оживает при числе соседей в [birthMin..birthMax]. */
   birthMin: number;
@@ -18,6 +19,12 @@ export interface Me {
   surviveMax: number;
   /** Сколько тиков Прах остаётся на поле, прежде чем стать Пустотой. */
   ashLifetime: number;
+  /** Энергия: приток за тик и расход на 100 живых Семян за тик. */
+  energyInflux: number;
+  energyDrainPer100: number;
+  /** Детерминированная угроза: окно тиков, в котором приток гаснет (из seed). */
+  threatTick: number;
+  threatDuration: number;
 }
 
 /** Классический Конвей: B3/S23 — проверенная точка старта эмерджентности. */
@@ -27,6 +34,10 @@ export const DEFAULT_ME: Me = {
   surviveMin: 2,
   surviveMax: 3,
   ashLifetime: 6,
+  energyInflux: 0.6,
+  energyDrainPer100: 0.06,
+  threatTick: Number.MAX_SAFE_INTEGER,
+  threatDuration: 0,
 };
 
 export const ME_LIMITS = {
@@ -57,6 +68,11 @@ export function tick(state: WorldState, me: Me): WorldState {
   const src = state.cells;
   const srcAge = state.age;
 
+  // Голод: на пустой энергии выживание ужесточается — поле само прореживается.
+  const starving = state.energy <= STARVATION_LEVEL;
+  const surviveMax = starving ? me.surviveMax - 1 : me.surviveMax;
+  let alive = 0;
+
   for (let y = 0; y < GRID_H; y++) {
     const row = y * GRID_W;
     const up = ROW_UP[y] as number;
@@ -77,7 +93,8 @@ export function tick(state: WorldState, me: Me): WorldState {
         (src[down + xp] === Cell.Seed ? 1 : 0);
 
       if (cell === Cell.Seed) {
-        if (n >= me.surviveMin && n <= me.surviveMax) {
+        alive++;
+        if (n >= me.surviveMin && n <= surviveMax) {
           next.age[i] = Math.min((srcAge[i] ?? 0) + 1, 0xffff);
         } else {
           next.cells[i] = Cell.Ash;
@@ -100,6 +117,7 @@ export function tick(state: WorldState, me: Me): WorldState {
     }
   }
 
+  next.energy = nextEnergy(state.energy, alive, me, state.tick);
   next.tick = state.tick + 1;
   return next;
 }

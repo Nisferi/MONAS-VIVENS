@@ -23,15 +23,17 @@ export interface WorldState {
   cells: Uint8Array;
   /** Возраст: для Семени — тики жизни (Мнемозина внизу), для Праха — тики распада. */
   age: Uint16Array;
+  /** Энергия поля, 0..100. Часть детерминированного состояния — прогноз её видит. */
+  energy: number;
 }
 
-export function createWorld(seed: number, density: number): WorldState {
+export function createWorld(seed: number, density: number, energy = 100): WorldState {
   const rng = mulberry32(seed);
   const cells = new Uint8Array(GRID_SIZE);
   for (let i = 0; i < GRID_SIZE; i++) {
     if (rng() < density) cells[i] = Cell.Seed;
   }
-  return { tick: 0, cells, age: new Uint16Array(GRID_SIZE) };
+  return { tick: 0, cells, age: new Uint16Array(GRID_SIZE), energy };
 }
 
 export function cloneWorld(state: WorldState): WorldState {
@@ -39,6 +41,7 @@ export function cloneWorld(state: WorldState): WorldState {
     tick: state.tick,
     cells: state.cells.slice(),
     age: state.age.slice(),
+    energy: state.energy,
   };
 }
 
@@ -52,14 +55,21 @@ export function serializeWorld(state: WorldState): string {
     tick: state.tick,
     cells: Array.from(state.cells),
     age: Array.from(state.age),
+    energy: state.energy,
   });
 }
 
 export function deserializeWorld(json: string): WorldState {
-  const raw = JSON.parse(json) as { tick: number; cells: number[]; age: number[] };
+  const raw = JSON.parse(json) as {
+    tick: number;
+    cells: number[];
+    age: number[];
+    energy?: number;
+  };
   return {
     tick: raw.tick,
     cells: Uint8Array.from(raw.cells),
     age: Uint16Array.from(raw.age),
+    energy: raw.energy ?? 100,
   };
 }

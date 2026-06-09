@@ -10,13 +10,14 @@ interface ForecastRequest {
   cells: Uint8Array;
   age: Uint16Array;
   baseTick: number;
+  energy: number;
   me: Me;
   steps: number;
 }
 
 self.onmessage = (e: MessageEvent<ForecastRequest>) => {
-  const { cells, age, baseTick, me, steps } = e.data;
-  let state: WorldState = { tick: baseTick, cells, age };
+  const { cells, age, baseTick, energy, me, steps } = e.data;
+  let state: WorldState = { tick: baseTick, cells, age, energy };
   for (let i = 0; i < steps; i++) {
     state = tick(state, me);
   }

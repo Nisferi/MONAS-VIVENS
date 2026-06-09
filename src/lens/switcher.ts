@@ -8,13 +8,14 @@ import { STABLE_AGE } from '../phi/mnemosyne';
 
 export type LensId = 1 | 2 | 3;
 
-/** Порог Φ, за которым просыпается разум. */
+/** Порог Φ, за которым просыпается разум (архетип Эхо снижает его). */
 export const MIND_PHI = 25;
 
 export class LensSwitcher {
   current: LensId = 1;
   unlocked2 = false;
   unlocked3 = false;
+  mindPhi = MIND_PHI;
 
   /** Проверяет условия открытия; возвращает текст события или null. */
   update(clusters: Cluster[], phi: number): string | null {
@@ -25,7 +26,7 @@ export class LensSwitcher {
         return 'Форма устояла. Открылась линза Филии.';
       }
     }
-    if (this.unlocked2 && !this.unlocked3 && phi >= MIND_PHI) {
+    if (this.unlocked2 && !this.unlocked3 && phi >= this.mindPhi) {
       this.unlocked3 = true;
       return 'Разум пробудился. Открылась линза Разума — видно будущее.';
     }

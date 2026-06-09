@@ -36,7 +36,7 @@ export class Forecaster {
     const cells = state.cells.slice();
     const age = state.age.slice();
     this.worker.postMessage(
-      { cells, age, baseTick: state.tick, me, steps },
+      { cells, age, baseTick: state.tick, energy: state.energy, me, steps },
       [cells.buffer, age.buffer],
     );
     return true;

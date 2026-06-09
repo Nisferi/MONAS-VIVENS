@@ -1,0 +1,13 @@
+{
+  "name": "MONAS VIVENS",
+  "short_name": "MONAS",
+  "description": "Философская artificial-life игра: проведи мир от клетки до Абсолюта.",
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0805",
+  "theme_color": "#0b0805",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

@@ -42,6 +42,8 @@ export class Hud {
   private tickEl!: HTMLElement;
   private seedsEl!: HTMLElement;
   private phiEl!: HTMLElement;
+  private energyEl!: HTMLElement;
+  private stageEl!: HTMLElement;
   private horizonEl!: HTMLElement;
   private pauseBtn!: HTMLButtonElement;
   private brushBtn!: HTMLButtonElement;
@@ -61,11 +63,15 @@ export class Hud {
   private buildStats(root: HTMLElement): void {
     this.phiEl = document.createElement('span');
     this.phiEl.id = 'phistat';
+    this.energyEl = document.createElement('span');
+    this.energyEl.id = 'energystat';
+    this.stageEl = document.createElement('span');
+    this.stageEl.id = 'stagestat';
     this.tickEl = document.createElement('span');
     this.seedsEl = document.createElement('span');
     this.horizonEl = document.createElement('span');
     this.horizonEl.id = 'horizonstat';
-    root.append(this.phiEl, this.tickEl, this.seedsEl, this.horizonEl);
+    root.append(this.phiEl, this.energyEl, this.stageEl, this.seedsEl, this.tickEl, this.horizonEl);
   }
 
   private buildSideButtons(root: HTMLElement): void {
@@ -185,12 +191,15 @@ export class Hud {
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), 3500);
   }
 
-  update(state: WorldState, report: PhiReport, horizon: number | null): void {
+  update(state: WorldState, report: PhiReport, horizon: number | null, stage: string): void {
     let seeds = 0;
     for (let i = 0; i < state.cells.length; i++) {
       if (state.cells[i] === Cell.Seed) seeds++;
     }
     this.phiEl.textContent = `Φ ${report.phi.toFixed(1)}`;
+    this.energyEl.textContent = `⚡ ${Math.round(state.energy)}`;
+    this.energyEl.classList.toggle('low', state.energy < 25);
+    this.stageEl.textContent = stage;
     this.tickEl.textContent = `Тик ${state.tick}`;
     this.seedsEl.textContent = `Семена ${seeds}`;
     this.horizonEl.textContent = horizon === null ? '' : `Взор +${horizon}`;
