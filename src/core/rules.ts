@@ -34,17 +34,21 @@ export const ME_LIMITS = {
   ashLifetime: { min: 0, max: 30 },
 } as const;
 
-function liveNeighbors(cells: Uint8Array, x: number, y: number): number {
-  let n = 0;
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const nx = (x + dx + GRID_W) % GRID_W;
-      const ny = (y + dy + GRID_H) % GRID_H;
-      if (cells[ny * GRID_W + nx] === Cell.Seed) n++;
-    }
-  }
-  return n;
+/*
+ * Предвычисленные таблицы заворота тора: убирают 8 взятий остатка на клетку
+ * в самом горячем цикле игры (его же гоняет прогноз будущего до 200 раз подряд).
+ */
+const XM1 = new Int32Array(GRID_W);
+const XP1 = new Int32Array(GRID_W);
+const ROW_UP = new Int32Array(GRID_H);
+const ROW_DOWN = new Int32Array(GRID_H);
+for (let x = 0; x < GRID_W; x++) {
+  XM1[x] = (x - 1 + GRID_W) % GRID_W;
+  XP1[x] = (x + 1) % GRID_W;
+}
+for (let y = 0; y < GRID_H; y++) {
+  ROW_UP[y] = ((y - 1 + GRID_H) % GRID_H) * GRID_W;
+  ROW_DOWN[y] = ((y + 1) % GRID_H) * GRID_W;
 }
 
 /** Один шаг мира. Не мутирует вход. */
@@ -54,10 +58,23 @@ export function tick(state: WorldState, me: Me): WorldState {
   const srcAge = state.age;
 
   for (let y = 0; y < GRID_H; y++) {
+    const row = y * GRID_W;
+    const up = ROW_UP[y] as number;
+    const down = ROW_DOWN[y] as number;
     for (let x = 0; x < GRID_W; x++) {
-      const i = y * GRID_W + x;
+      const i = row + x;
       const cell = src[i];
-      const n = liveNeighbors(src, x, y);
+      const xm = XM1[x] as number;
+      const xp = XP1[x] as number;
+      const n =
+        (src[up + xm] === Cell.Seed ? 1 : 0) +
+        (src[up + x] === Cell.Seed ? 1 : 0) +
+        (src[up + xp] === Cell.Seed ? 1 : 0) +
+        (src[row + xm] === Cell.Seed ? 1 : 0) +
+        (src[row + xp] === Cell.Seed ? 1 : 0) +
+        (src[down + xm] === Cell.Seed ? 1 : 0) +
+        (src[down + x] === Cell.Seed ? 1 : 0) +
+        (src[down + xp] === Cell.Seed ? 1 : 0);
 
       if (cell === Cell.Seed) {
         if (n >= me.surviveMin && n <= me.surviveMax) {

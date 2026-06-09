@@ -44,12 +44,31 @@ interface RawCluster {
   cy: number;
 }
 
+/*
+ * Таблицы заворота тора и переиспользуемые буферы: flood fill бежит каждый тик,
+ * незачем платить за остатки от деления и свежие аллокации.
+ */
+const XM1 = new Int32Array(GRID_W);
+const XP1 = new Int32Array(GRID_W);
+const ROW_UP = new Int32Array(GRID_H);
+const ROW_DOWN = new Int32Array(GRID_H);
+for (let x = 0; x < GRID_W; x++) {
+  XM1[x] = (x - 1 + GRID_W) % GRID_W;
+  XP1[x] = (x + 1) % GRID_W;
+}
+for (let y = 0; y < GRID_H; y++) {
+  ROW_UP[y] = ((y - 1 + GRID_H) % GRID_H) * GRID_W;
+  ROW_DOWN[y] = ((y + 1) % GRID_H) * GRID_W;
+}
+const visited = new Uint8Array(GRID_SIZE);
+const stack = new Int32Array(GRID_SIZE);
+const neigh = new Int32Array(8);
+
 /** Связные компоненты живых клеток. */
 function findRaw(state: WorldState): RawCluster[] {
   const { cells } = state;
-  const visited = new Uint8Array(GRID_SIZE);
+  visited.fill(0);
   const result: RawCluster[] = [];
-  const stack: number[] = [];
 
   for (let start = 0; start < GRID_SIZE; start++) {
     if (cells[start] !== Cell.Seed || visited[start]) continue;
@@ -58,30 +77,39 @@ function findRaw(state: WorldState): RawCluster[] {
     let edges = 0;
     let sx = 0;
     let sy = 0;
+    let top = 0;
     visited[start] = 1;
-    stack.push(start);
+    stack[top++] = start;
 
-    while (stack.length > 0) {
-      const i = stack.pop() as number;
+    while (top > 0) {
+      const i = stack[--top] as number;
       member.push(i);
       const x = i % GRID_W;
       const y = (i / GRID_W) | 0;
       sx += x;
       sy += y;
 
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          const nx = (x + dx + GRID_W) % GRID_W;
-          const ny = (y + dy + GRID_H) % GRID_H;
-          const ni = ny * GRID_W + nx;
-          if (cells[ni] !== Cell.Seed) continue;
-          // Каждое ребро считаем один раз: только в «положительную» сторону.
-          if (dy > 0 || (dy === 0 && dx > 0)) edges++;
-          if (!visited[ni]) {
-            visited[ni] = 1;
-            stack.push(ni);
-          }
+      const row = y * GRID_W;
+      const up = ROW_UP[y] as number;
+      const down = ROW_DOWN[y] as number;
+      const xm = XM1[x] as number;
+      const xp = XP1[x] as number;
+      // 8 соседей; каждое ребро считаем один раз — в «положительную» сторону (k ≥ 4).
+      neigh[0] = up + xm;
+      neigh[1] = up + x;
+      neigh[2] = up + xp;
+      neigh[3] = row + xm;
+      neigh[4] = row + xp;
+      neigh[5] = down + xm;
+      neigh[6] = down + x;
+      neigh[7] = down + xp;
+      for (let k = 0; k < 8; k++) {
+        const ni = neigh[k] as number;
+        if (cells[ni] !== Cell.Seed) continue;
+        if (k >= 4) edges++;
+        if (!visited[ni]) {
+          visited[ni] = 1;
+          stack[top++] = ni;
         }
       }
     }

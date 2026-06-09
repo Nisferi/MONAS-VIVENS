@@ -16,6 +16,10 @@ export interface HudCallbacks {
   onViewReset(): void;
   /** Возвращает успех (линза может быть ещё закрыта). */
   onLensSelect(lens: LensId): boolean;
+  /** Переключает кисть посева; возвращает новое состояние «кисть включена». */
+  onBrushToggle(): boolean;
+  /** Цикл скорости; возвращает новый множитель (1, 2, 4). */
+  onSpeedCycle(): number;
 }
 
 interface SliderSpec {
@@ -38,6 +42,9 @@ export class Hud {
   private tickEl!: HTMLElement;
   private seedsEl!: HTMLElement;
   private phiEl!: HTMLElement;
+  private horizonEl!: HTMLElement;
+  private pauseBtn!: HTMLButtonElement;
+  private brushBtn!: HTMLButtonElement;
   private breakdownEl!: HTMLElement;
   private lensBtns = new Map<LensId, HTMLButtonElement>();
   private toastEl!: HTMLElement;
@@ -56,7 +63,9 @@ export class Hud {
     this.phiEl.id = 'phistat';
     this.tickEl = document.createElement('span');
     this.seedsEl = document.createElement('span');
-    root.append(this.phiEl, this.tickEl, this.seedsEl);
+    this.horizonEl = document.createElement('span');
+    this.horizonEl.id = 'horizonstat';
+    root.append(this.phiEl, this.tickEl, this.seedsEl, this.horizonEl);
   }
 
   private buildSideButtons(root: HTMLElement): void {
@@ -78,20 +87,37 @@ export class Hud {
       });
       this.lensBtns.set(id, b);
     };
-    lens(1, 'Ⅰ', 'Линза Семян');
-    lens(2, 'Ⅱ', 'Линза Филии');
+    lens(1, 'Ⅰ', 'Линза Семян (клавиша 1)');
+    lens(2, 'Ⅱ', 'Линза Филии (клавиша 2)');
+    lens(3, 'Ⅲ', 'Линза Разума (клавиша 3)');
     this.markLens(1);
     this.setLensUnlocked(2, false);
+    this.setLensUnlocked(3, false);
 
-    const pauseBtn = btn('⏸', 'Остановить время', () => {
-      const paused = this.cb.onPauseToggle();
-      pauseBtn.textContent = paused ? '▶' : '⏸';
-      pauseBtn.title = paused ? 'Пустить время' : 'Остановить время';
+    this.pauseBtn = btn('⏸', 'Остановить время (пробел)', () => this.applyPause(this.cb.onPauseToggle()));
+    const speedBtn = btn('×1', 'Скорость времени (S)', () => {
+      speedBtn.textContent = `×${this.cb.onSpeedCycle()}`;
     });
+    this.brushBtn = btn('✋', 'Кисть: сеять Семена пальцем/мышью (B)', () =>
+      this.applyBrush(this.cb.onBrushToggle()),
+    );
     btn('✦', 'Новые Семена', () => this.cb.onReseed());
     btn('＋', 'Приблизить', () => this.cb.onZoomIn());
     btn('－', 'Отдалить', () => this.cb.onZoomOut());
-    btn('◻', 'Всё поле', () => this.cb.onViewReset());
+    btn('◻', 'Всё поле (0)', () => this.cb.onViewReset());
+  }
+
+  applyPause(paused: boolean): void {
+    this.pauseBtn.textContent = paused ? '▶' : '⏸';
+    this.pauseBtn.title = paused ? 'Пустить время (пробел)' : 'Остановить время (пробел)';
+  }
+
+  applyBrush(brush: boolean): void {
+    this.brushBtn.textContent = brush ? '✎' : '✋';
+    this.brushBtn.classList.toggle('active', brush);
+    this.brushBtn.title = brush
+      ? 'Кисть включена: тяни по полю, чтобы сеять (B — выкл)'
+      : 'Кисть: сеять Семена пальцем/мышью (B)';
   }
 
   markLens(active: LensId): void {
@@ -159,7 +185,7 @@ export class Hud {
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), 3500);
   }
 
-  update(state: WorldState, report: PhiReport): void {
+  update(state: WorldState, report: PhiReport, horizon: number | null): void {
     let seeds = 0;
     for (let i = 0; i < state.cells.length; i++) {
       if (state.cells[i] === Cell.Seed) seeds++;
@@ -167,6 +193,7 @@ export class Hud {
     this.phiEl.textContent = `Φ ${report.phi.toFixed(1)}`;
     this.tickEl.textContent = `Тик ${state.tick}`;
     this.seedsEl.textContent = `Семена ${seeds}`;
+    this.horizonEl.textContent = horizon === null ? '' : `Взор +${horizon}`;
 
     const f = (v: number) => v.toFixed(2);
     this.breakdownEl.textContent =

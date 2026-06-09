@@ -9,6 +9,7 @@
  */
 import { Cell, GRID_H, GRID_W, type WorldState } from '../core/grid';
 import { drawLens2 } from '../lens/lens2';
+import { drawLens3, paintFutureGhost } from '../lens/lens3';
 import type { LensId } from '../lens/switcher';
 import type { Cluster } from '../phi/clusters';
 
@@ -31,6 +32,10 @@ export class FieldRenderer {
   private readonly cellCanvas: HTMLCanvasElement;
   private readonly cellCtx: CanvasRenderingContext2D;
   private readonly image: ImageData;
+  private readonly futureCanvas: HTMLCanvasElement;
+  private readonly futureCtx: CanvasRenderingContext2D;
+  private readonly futureImage: ImageData;
+  private hasFuture = false;
 
   /** Зум относительно «вписанного» масштаба: 1 = всё поле на экране. */
   private zoom = 1;
@@ -50,6 +55,14 @@ export class FieldRenderer {
     if (!cellCtx) throw new Error('Canvas 2D недоступен');
     this.cellCtx = cellCtx;
     this.image = cellCtx.createImageData(GRID_W, GRID_H);
+
+    this.futureCanvas = document.createElement('canvas');
+    this.futureCanvas.width = GRID_W;
+    this.futureCanvas.height = GRID_H;
+    const futureCtx = this.futureCanvas.getContext('2d');
+    if (!futureCtx) throw new Error('Canvas 2D недоступен');
+    this.futureCtx = futureCtx;
+    this.futureImage = futureCtx.createImageData(GRID_W, GRID_H);
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -116,6 +129,26 @@ export class FieldRenderer {
     };
   }
 
+  /** Клетка под точкой экрана (CSS-пиксели) или null вне поля. */
+  cellAt(cssX: number, cssY: number): { x: number; y: number } | null {
+    const dpr = window.devicePixelRatio || 1;
+    const c = this.screenToCell(cssX * dpr, cssY * dpr);
+    const x = Math.floor(c.x);
+    const y = Math.floor(c.y);
+    if (x < 0 || x >= GRID_W || y < 0 || y >= GRID_H) return null;
+    return { x, y };
+  }
+
+  /** Обновить призрак будущего (или скрыть его, передав null). */
+  setFuture(cells: Uint8Array | null): void {
+    if (cells) {
+      paintFutureGhost(this.futureCtx, this.futureImage, cells);
+      this.hasFuture = true;
+    } else {
+      this.hasFuture = false;
+    }
+  }
+
   render(state: WorldState, lens: LensId = 1, clusters: Cluster[] = []): void {
     this.paintCells(state);
 
@@ -132,12 +165,20 @@ export class FieldRenderer {
     if (lens === 1) {
       ctx.drawImage(this.cellCanvas, originX, originY, GRID_W * s, GRID_H * s);
       if (s >= GRID_LINES_FROM) this.paintGrid(originX, originY, s);
-    } else {
+    } else if (lens === 2) {
       // Линза Филии: клетки — лишь тень внизу, поверх — узлы и нити.
       ctx.globalAlpha = 0.18;
       ctx.drawImage(this.cellCanvas, originX, originY, GRID_W * s, GRID_H * s);
       ctx.globalAlpha = 1;
       drawLens2(ctx, { originX, originY, scale: s }, clusters);
+    } else {
+      // Линза Разума: настоящее тускнеет, будущее проступает бирюзой.
+      drawLens3(
+        ctx,
+        { originX, originY, scale: s },
+        this.cellCanvas,
+        this.hasFuture ? this.futureCanvas : null,
+      );
     }
 
     // Рамка поля — край мира.
