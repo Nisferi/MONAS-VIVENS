@@ -20,7 +20,13 @@
 - ✅ Шаг 2 — `core/rules` + панель Ме: ползунки законов меняют жизнь на лету.
 - ⬜ Шаг 3 — `phi` + линза 2: кластеры, узлы, число Φ.
 
-## Запуск
+## Играть в браузере
+
+После включения GitHub Pages (Settings → Pages → Source: **GitHub Actions**)
+игра доступна по адресу: **https://nisferi.github.io/MONAS-VIVENS/**
+Деплой происходит автоматически при каждом пуше (workflow `deploy.yml`).
+
+## Запуск локально
 
 ```bash
 npm install

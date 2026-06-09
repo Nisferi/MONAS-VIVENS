@@ -19,3 +19,4 @@
 | [10-mvp-plan.md](10-mvp-plan.md) | Границы MVP и план сборки (живой) | — |
 | [11-aesthetics.md](11-aesthetics.md) | Визуал, тексты, звук | `src/ui/` |
 | [12-risks.md](12-risks.md) | Риски | — |
+| [13-detailed-plan.md](13-detailed-plan.md) | Подробный план: геймплей по минутам, подзадачи, вехи (живой) | — |
