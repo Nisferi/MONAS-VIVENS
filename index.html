@@ -93,6 +93,41 @@
       font-size: 19px;
       line-height: 1;
     }
+    .iconbtn.active {
+      border-color: var(--turquoise);
+      color: var(--turquoise);
+    }
+    .iconbtn.locked {
+      opacity: 0.35;
+    }
+    #phistat { color: var(--turquoise); font-weight: bold; }
+    #phibreak {
+      font-size: 11px;
+      color: var(--ochre);
+      text-align: center;
+      padding-bottom: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    #toast {
+      position: fixed;
+      top: 52px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--panel);
+      border: 1px solid var(--gold);
+      border-radius: 10px;
+      color: var(--gold);
+      font-size: 14px;
+      padding: 10px 18px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.4s;
+      max-width: min(90vw, 480px);
+      text-align: center;
+    }
+    #toast.show { opacity: 1; }
 
     /* Нижняя панель Ме */
     #mepanel {

@@ -7,6 +7,10 @@
 import { createWorld, type WorldState } from './core/grid';
 import { hashSeed } from './core/rng';
 import { DEFAULT_ME, tick, type Me } from './core/rules';
+import { LensSwitcher } from './lens/switcher';
+import { ClusterTracker, type Cluster } from './phi/clusters';
+import { NeikosMeter } from './phi/neikos';
+import { computePhi, type PhiReport } from './phi/phi';
 import { FieldRenderer } from './ui/canvas';
 import { Hud } from './ui/hud';
 
@@ -22,6 +26,24 @@ let me: Me = { ...DEFAULT_ME };
 let world: WorldState = createWorld(hashSeed(seedText), START_DENSITY);
 let paused = false;
 
+// Измерение сознания: кластеры → члены формулы → Φ.
+const tracker = new ClusterTracker();
+const neikosMeter = new NeikosMeter();
+const lenses = new LensSwitcher();
+let clusters: Cluster[] = [];
+let report: PhiReport = computePhi([], 0);
+
+function measure(): void {
+  clusters = tracker.update(world);
+  const neikos = neikosMeter.update(tracker.events);
+  report = computePhi(clusters, neikos);
+  const unlockEvent = lenses.update(clusters);
+  if (unlockEvent) {
+    hud.setLensUnlocked(2, true);
+    hud.toast(unlockEvent);
+  }
+}
+
 const renderer = new FieldRenderer(canvas);
 const hud = new Hud(me, {
   onMeChange(next) {
@@ -34,11 +56,20 @@ const hud = new Hud(me, {
   onReseed() {
     seedText = String(Date.now());
     world = createWorld(hashSeed(seedText), START_DENSITY);
+    tracker.reset();
+    neikosMeter.reset();
   },
   onZoomIn: () => renderer.zoomAt(ZOOM_STEP, window.innerWidth / 2, window.innerHeight / 2),
   onZoomOut: () => renderer.zoomAt(1 / ZOOM_STEP, window.innerWidth / 2, window.innerHeight / 2),
   onViewReset: () => renderer.resetView(),
+  onLensSelect(lens) {
+    const ok = lenses.select(lens);
+    if (ok) hud.markLens(lens);
+    return ok;
+  },
 });
+
+measure();
 
 // ---- Управление видом: колесо, перетаскивание, пинч ----
 
@@ -113,14 +144,15 @@ function frame(now: number): void {
   if (!paused) {
     while (accumulator >= TICK_MS) {
       world = tick(world, me);
+      measure();
       accumulator -= TICK_MS;
     }
   } else {
     accumulator = 0;
   }
 
-  renderer.render(world);
-  hud.update(world);
+  renderer.render(world, lenses.current, clusters);
+  hud.update(world, report);
   requestAnimationFrame(frame);
 }
 

@@ -1,10 +1,11 @@
 /**
- * ui/hud — статистика, кнопки управления видом/временем и панель Ме.
- * Панель Ме — выезжающий снизу лист; кнопки вида — колонка справа.
- * Тон текстов — docs/design/11-aesthetics.md.
+ * ui/hud — статистика (включая Φ), кнопки линз/вида/времени и панель Ме.
+ * Читает всё, не считает ничего. Тон текстов — docs/design/11-aesthetics.md.
  */
 import { Cell, type WorldState } from '../core/grid';
 import { ME_LIMITS, type Me } from '../core/rules';
+import type { LensId } from '../lens/switcher';
+import type { PhiReport } from '../phi/phi';
 
 export interface HudCallbacks {
   onMeChange(me: Me): void;
@@ -13,6 +14,8 @@ export interface HudCallbacks {
   onZoomIn(): void;
   onZoomOut(): void;
   onViewReset(): void;
+  /** Возвращает успех (линза может быть ещё закрыта). */
+  onLensSelect(lens: LensId): boolean;
 }
 
 interface SliderSpec {
@@ -34,18 +37,26 @@ export class Hud {
   private readonly me: Me;
   private tickEl!: HTMLElement;
   private seedsEl!: HTMLElement;
+  private phiEl!: HTMLElement;
+  private breakdownEl!: HTMLElement;
+  private lensBtns = new Map<LensId, HTMLButtonElement>();
+  private toastEl!: HTMLElement;
+  private toastTimer = 0;
 
   constructor(initialMe: Me, private readonly cb: HudCallbacks) {
     this.me = { ...initialMe };
     this.buildStats(document.getElementById('stats') as HTMLElement);
     this.buildSideButtons(document.getElementById('sidebtns') as HTMLElement);
     this.buildMePanel(document.getElementById('mepanel') as HTMLElement);
+    this.buildToast();
   }
 
   private buildStats(root: HTMLElement): void {
+    this.phiEl = document.createElement('span');
+    this.phiEl.id = 'phistat';
     this.tickEl = document.createElement('span');
     this.seedsEl = document.createElement('span');
-    root.append(this.tickEl, this.seedsEl);
+    root.append(this.phiEl, this.tickEl, this.seedsEl);
   }
 
   private buildSideButtons(root: HTMLElement): void {
@@ -59,6 +70,19 @@ export class Hud {
       return b;
     };
 
+    // Линзы.
+    const lens = (id: LensId, label: string, title: string) => {
+      const b = btn(label, title, () => {
+        if (this.cb.onLensSelect(id)) this.markLens(id);
+        else this.toast('Эта линза ещё закрыта. Дай форме устояться.');
+      });
+      this.lensBtns.set(id, b);
+    };
+    lens(1, 'Ⅰ', 'Линза Семян');
+    lens(2, 'Ⅱ', 'Линза Филии');
+    this.markLens(1);
+    this.setLensUnlocked(2, false);
+
     const pauseBtn = btn('⏸', 'Остановить время', () => {
       const paused = this.cb.onPauseToggle();
       pauseBtn.textContent = paused ? '▶' : '⏸';
@@ -70,12 +94,25 @@ export class Hud {
     btn('◻', 'Всё поле', () => this.cb.onViewReset());
   }
 
+  markLens(active: LensId): void {
+    for (const [id, b] of this.lensBtns) b.classList.toggle('active', id === active);
+  }
+
+  setLensUnlocked(id: LensId, unlocked: boolean): void {
+    const b = this.lensBtns.get(id);
+    if (b) b.classList.toggle('locked', !unlocked);
+  }
+
   private buildMePanel(panel: HTMLElement): void {
     const handle = document.createElement('button');
     handle.id = 'mehandle';
     handle.textContent = '— Начертай Ме —';
     handle.addEventListener('click', () => panel.classList.toggle('hidden'));
     panel.append(handle);
+
+    this.breakdownEl = document.createElement('div');
+    this.breakdownEl.id = 'phibreak';
+    panel.append(this.breakdownEl);
 
     for (const spec of SLIDERS) {
       panel.append(this.buildSlider(spec));
@@ -109,12 +146,31 @@ export class Hud {
     return row;
   }
 
-  update(state: WorldState): void {
+  private buildToast(): void {
+    this.toastEl = document.createElement('div');
+    this.toastEl.id = 'toast';
+    document.body.append(this.toastEl);
+  }
+
+  toast(text: string): void {
+    this.toastEl.textContent = text;
+    this.toastEl.classList.add('show');
+    window.clearTimeout(this.toastTimer);
+    this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), 3500);
+  }
+
+  update(state: WorldState, report: PhiReport): void {
     let seeds = 0;
     for (let i = 0; i < state.cells.length; i++) {
       if (state.cells[i] === Cell.Seed) seeds++;
     }
+    this.phiEl.textContent = `Φ ${report.phi.toFixed(1)}`;
     this.tickEl.textContent = `Тик ${state.tick}`;
     this.seedsEl.textContent = `Семена ${seeds}`;
+
+    const f = (v: number) => v.toFixed(2);
+    this.breakdownEl.textContent =
+      `Семена ${f(report.seeds)} × Филия ${f(report.philia)} × Мнемозина ${f(report.mnemosyne)}` +
+      `  −  Хаос ${f(report.chaos)}  −  Нейкос ${f(report.neikos)}`;
   }
 }

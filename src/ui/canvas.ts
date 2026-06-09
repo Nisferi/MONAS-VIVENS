@@ -8,6 +8,9 @@
  * появляется тонкая сетка.
  */
 import { Cell, GRID_H, GRID_W, type WorldState } from '../core/grid';
+import { drawLens2 } from '../lens/lens2';
+import type { LensId } from '../lens/switcher';
+import type { Cluster } from '../phi/clusters';
 
 const COLOR_BG = '#0b0805';
 const COLOR_YOUNG: [number, number, number] = [0xff, 0x8c, 0x1a]; // янтарь
@@ -113,7 +116,7 @@ export class FieldRenderer {
     };
   }
 
-  render(state: WorldState): void {
+  render(state: WorldState, lens: LensId = 1, clusters: Cluster[] = []): void {
     this.paintCells(state);
 
     const { ctx, canvas } = this;
@@ -125,9 +128,17 @@ export class FieldRenderer {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(this.cellCanvas, originX, originY, GRID_W * s, GRID_H * s);
 
-    if (s >= GRID_LINES_FROM) this.paintGrid(originX, originY, s);
+    if (lens === 1) {
+      ctx.drawImage(this.cellCanvas, originX, originY, GRID_W * s, GRID_H * s);
+      if (s >= GRID_LINES_FROM) this.paintGrid(originX, originY, s);
+    } else {
+      // Линза Филии: клетки — лишь тень внизу, поверх — узлы и нити.
+      ctx.globalAlpha = 0.18;
+      ctx.drawImage(this.cellCanvas, originX, originY, GRID_W * s, GRID_H * s);
+      ctx.globalAlpha = 1;
+      drawLens2(ctx, { originX, originY, scale: s }, clusters);
+    }
 
     // Рамка поля — край мира.
     ctx.strokeStyle = 'rgba(217, 152, 64, 0.5)';
