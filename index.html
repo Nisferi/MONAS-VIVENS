@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>MONAS VIVENS</title>
+  <style>
+    :root {
+      --clay-dark: #1a120c;
+      --clay: #3a2a1a;
+      --ochre: #c08840;
+      --gold: #e8c060;
+      --turquoise: #40c0b0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--clay-dark);
+      color: var(--gold);
+      font-family: Georgia, 'Times New Roman', serif;
+      overflow: hidden;
+      touch-action: manipulation;
+    }
+    #app {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+    }
+    #title {
+      font-variant: small-caps;
+      letter-spacing: 0.3em;
+      font-size: 14px;
+      color: var(--ochre);
+    }
+    #field {
+      image-rendering: pixelated;
+      border: 1px solid var(--clay);
+      flex: 0 1 auto;
+      max-width: 100%;
+      max-height: 60vh;
+      aspect-ratio: 1;
+    }
+    #hud {
+      width: 100%;
+      max-width: 520px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 13px;
+    }
+    #stats { display: flex; justify-content: space-between; color: var(--ochre); }
+    .me-row { display: flex; align-items: center; gap: 8px; }
+    .me-row label { flex: 0 0 11em; color: var(--gold); }
+    .me-row output { flex: 0 0 2em; text-align: right; color: var(--turquoise); }
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--ochre);
+      background: var(--clay);
+    }
+    #controls { display: flex; gap: 8px; justify-content: center; }
+    button {
+      background: var(--clay);
+      color: var(--gold);
+      border: 1px solid var(--ochre);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 6px 14px;
+      cursor: pointer;
+    }
+    button:hover { background: #4a3624; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="title">MONAS VIVENS</div>
+    <canvas id="field" width="64" height="64"></canvas>
+    <div id="hud"></div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
