@@ -6,79 +6,166 @@
   <title>MONAS VIVENS</title>
   <style>
     :root {
-      --clay-dark: #1a120c;
-      --clay: #3a2a1a;
-      --ochre: #c08840;
-      --gold: #e8c060;
-      --turquoise: #40c0b0;
+      --bg: #0b0805;
+      --panel: rgba(26, 18, 11, 0.92);
+      --line: #5a4630;
+      --ochre: #d99840;
+      --gold: #ffd966;
+      --amber: #ff8c1a;
+      --turquoise: #00e5cf;
+      --text: #f0dba8;
+      --dim: #9a8260;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
       height: 100%;
-      background: var(--clay-dark);
-      color: var(--gold);
+      background: var(--bg);
+      color: var(--text);
       font-family: Georgia, 'Times New Roman', serif;
       overflow: hidden;
-      touch-action: manipulation;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
-    #app {
-      height: 100%;
+    #field {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      cursor: grab;
+    }
+    #field.dragging { cursor: grabbing; }
+
+    /* Верхняя полоса: имя + статистика */
+    #topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
       display: flex;
-      flex-direction: column;
       align-items: center;
+      justify-content: space-between;
       gap: 8px;
-      padding: 8px;
+      padding: 8px 12px;
+      pointer-events: none;
     }
     #title {
       font-variant: small-caps;
-      letter-spacing: 0.3em;
-      font-size: 14px;
+      letter-spacing: 0.25em;
+      font-size: 13px;
       color: var(--ochre);
+      text-shadow: 0 1px 4px #000;
     }
-    #field {
-      image-rendering: pixelated;
-      border: 1px solid var(--clay);
-      flex: 0 1 auto;
-      max-width: 100%;
-      max-height: 60vh;
-      aspect-ratio: 1;
+    #stats {
+      display: flex;
+      gap: 14px;
+      font-size: 13px;
+      color: var(--gold);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 5px 14px;
     }
-    #hud {
-      width: 100%;
-      max-width: 520px;
+
+    /* Правая колонка: управление видом и временем */
+    #sidebtns {
+      position: fixed;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      font-size: 13px;
+      gap: 8px;
     }
-    #stats { display: flex; justify-content: space-between; color: var(--ochre); }
-    .me-row { display: flex; align-items: center; gap: 8px; }
-    .me-row label { flex: 0 0 11em; color: var(--gold); }
-    .me-row output { flex: 0 0 2em; text-align: right; color: var(--turquoise); }
+    button {
+      background: var(--panel);
+      color: var(--gold);
+      border: 1px solid var(--line);
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    button:hover { border-color: var(--gold); }
+    button:active { color: var(--turquoise); }
+    .iconbtn {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      font-size: 19px;
+      line-height: 1;
+    }
+
+    /* Нижняя панель Ме */
+    #mepanel {
+      position: fixed;
+      left: 50%;
+      bottom: 0;
+      transform: translate(-50%, 0);
+      width: min(560px, calc(100vw - 16px));
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-bottom: none;
+      border-radius: 14px 14px 0 0;
+      padding: 10px 16px 14px;
+      transition: transform 0.25s ease;
+      backdrop-filter: blur(3px);
+    }
+    #mepanel.hidden { transform: translate(-50%, calc(100% - 38px)); }
+    #mehandle {
+      width: 100%;
+      background: none;
+      border: none;
+      color: var(--ochre);
+      font-size: 14px;
+      font-variant: small-caps;
+      letter-spacing: 0.15em;
+      padding: 2px 0 10px;
+    }
+    #mehandle:hover { color: var(--gold); }
+    .me-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 4px 0;
+    }
+    .me-row label {
+      flex: 0 0 9.5em;
+      font-size: 13px;
+      color: var(--text);
+    }
+    .me-row output {
+      flex: 0 0 2em;
+      text-align: right;
+      font-size: 14px;
+      font-weight: bold;
+      color: var(--turquoise);
+    }
     input[type="range"] {
       flex: 1;
+      height: 28px;
       accent-color: var(--ochre);
-      background: var(--clay);
-    }
-    #controls { display: flex; gap: 8px; justify-content: center; }
-    button {
-      background: var(--clay);
-      color: var(--gold);
-      border: 1px solid var(--ochre);
-      font-family: inherit;
-      font-size: 13px;
-      padding: 6px 14px;
       cursor: pointer;
     }
-    button:hover { background: #4a3624; }
+    #merow-buttons {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      padding-top: 8px;
+    }
+    #merow-buttons button {
+      border-radius: 8px;
+      font-size: 13px;
+      padding: 8px 18px;
+    }
   </style>
 </head>
 <body>
-  <div id="app">
+  <canvas id="field"></canvas>
+  <div id="topbar">
     <div id="title">MONAS VIVENS</div>
-    <canvas id="field" width="64" height="64"></canvas>
-    <div id="hud"></div>
+    <div id="stats"></div>
   </div>
+  <div id="sidebtns"></div>
+  <div id="mepanel"></div>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

@@ -1,37 +1,146 @@
 /**
- * ui/canvas — отрисовка поля. Читает состояние, не считает ничего.
- * Палитра — docs/design/11-aesthetics.md: охра, золото, бирюза, тёмная глина.
+ * ui/canvas — полноэкранная отрисовка поля с зумом и панорамой.
+ * Читает состояние, не считает ничего.
+ *
+ * Палитра (docs/design/11-aesthetics.md, итерация 2 — контраст и читаемость):
+ * фон почти чёрный, Семена — янтарь→золото по возрасту, Прах — тёмная глина,
+ * Сигнал — бирюза. Пиксели увеличиваются без сглаживания; на крупном зуме
+ * появляется тонкая сетка.
  */
 import { Cell, GRID_H, GRID_W, type WorldState } from '../core/grid';
 
-const COLOR_BG: [number, number, number] = [0x1a, 0x12, 0x0c]; // тёмная глина
-const COLOR_YOUNG: [number, number, number] = [0xc0, 0x88, 0x40]; // охра
-const COLOR_OLD: [number, number, number] = [0xe8, 0xc0, 0x60]; // золото
-const COLOR_SIGNAL: [number, number, number] = [0x40, 0xc0, 0xb0]; // бирюза
-const COLOR_ASH: [number, number, number] = [0x3a, 0x2a, 0x1a]; // глина
+const COLOR_BG = '#0b0805';
+const COLOR_YOUNG: [number, number, number] = [0xff, 0x8c, 0x1a]; // янтарь
+const COLOR_OLD: [number, number, number] = [0xff, 0xd9, 0x66]; // золото
+const COLOR_SIGNAL: [number, number, number] = [0x00, 0xe5, 0xcf]; // бирюза
+const COLOR_ASH: [number, number, number] = [0x52, 0x3a, 0x24]; // тёмная глина
+const COLOR_EMPTY: [number, number, number] = [0x12, 0x0d, 0x08]; // поле
 
-/** Возраст, к которому Семя дозревает из охры в золото. */
+/** Возраст, к которому Семя дозревает из янтаря в золото. */
 const MATURE_AGE = 20;
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 16;
+/** Порог пикселей на клетку, после которого рисуем сетку. */
+const GRID_LINES_FROM = 9;
 
 export class FieldRenderer {
   private readonly ctx: CanvasRenderingContext2D;
+  private readonly cellCanvas: HTMLCanvasElement;
+  private readonly cellCtx: CanvasRenderingContext2D;
   private readonly image: ImageData;
 
-  constructor(canvas: HTMLCanvasElement) {
-    canvas.width = GRID_W;
-    canvas.height = GRID_H;
+  /** Зум относительно «вписанного» масштаба: 1 = всё поле на экране. */
+  private zoom = 1;
+  /** Центр взгляда в координатах клеток. */
+  private centerX = GRID_W / 2;
+  private centerY = GRID_H / 2;
+
+  constructor(private readonly canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Canvas 2D недоступен');
     this.ctx = ctx;
-    this.image = ctx.createImageData(GRID_W, GRID_H);
+
+    this.cellCanvas = document.createElement('canvas');
+    this.cellCanvas.width = GRID_W;
+    this.cellCanvas.height = GRID_H;
+    const cellCtx = this.cellCanvas.getContext('2d');
+    if (!cellCtx) throw new Error('Canvas 2D недоступен');
+    this.cellCtx = cellCtx;
+    this.image = cellCtx.createImageData(GRID_W, GRID_H);
+
+    this.resize();
+    window.addEventListener('resize', () => this.resize());
+  }
+
+  private resize(): void {
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = Math.round(window.innerWidth * dpr);
+    this.canvas.height = Math.round(window.innerHeight * dpr);
+  }
+
+  /** Масштаб «вписать поле в экран», в физических пикселях на клетку. */
+  private fitScale(): number {
+    return Math.min(this.canvas.width, this.canvas.height) / GRID_W;
+  }
+
+  private scale(): number {
+    return this.fitScale() * this.zoom;
+  }
+
+  private clampView(): void {
+    this.zoom = Math.min(Math.max(this.zoom, ZOOM_MIN), ZOOM_MAX);
+    // Центр не уводим дальше границ поля.
+    this.centerX = Math.min(Math.max(this.centerX, 0), GRID_W);
+    this.centerY = Math.min(Math.max(this.centerY, 0), GRID_H);
+  }
+
+  /** Зум к точке экрана (CSS-пиксели), factor > 1 — приближение. */
+  zoomAt(factor: number, cssX: number, cssY: number): void {
+    const dpr = window.devicePixelRatio || 1;
+    const before = this.screenToCell(cssX * dpr, cssY * dpr);
+    this.zoom *= factor;
+    this.clampView();
+    const after = this.screenToCell(cssX * dpr, cssY * dpr);
+    this.centerX += before.x - after.x;
+    this.centerY += before.y - after.y;
+    this.clampView();
+  }
+
+  /** Сдвиг взгляда на (dx, dy) CSS-пикселей. */
+  panBy(cssDx: number, cssDy: number): void {
+    const dpr = window.devicePixelRatio || 1;
+    const s = this.scale();
+    this.centerX -= (cssDx * dpr) / s;
+    this.centerY -= (cssDy * dpr) / s;
+    this.clampView();
+  }
+
+  resetView(): void {
+    this.zoom = 1;
+    this.centerX = GRID_W / 2;
+    this.centerY = GRID_H / 2;
+  }
+
+  zoomLevel(): number {
+    return this.zoom;
+  }
+
+  private screenToCell(px: number, py: number): { x: number; y: number } {
+    const s = this.scale();
+    return {
+      x: this.centerX + (px - this.canvas.width / 2) / s,
+      y: this.centerY + (py - this.canvas.height / 2) / s,
+    };
   }
 
   render(state: WorldState): void {
+    this.paintCells(state);
+
+    const { ctx, canvas } = this;
+    const s = this.scale();
+    const originX = canvas.width / 2 - this.centerX * s;
+    const originY = canvas.height / 2 - this.centerY * s;
+
+    ctx.fillStyle = COLOR_BG;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(this.cellCanvas, originX, originY, GRID_W * s, GRID_H * s);
+
+    if (s >= GRID_LINES_FROM) this.paintGrid(originX, originY, s);
+
+    // Рамка поля — край мира.
+    ctx.strokeStyle = 'rgba(217, 152, 64, 0.5)';
+    ctx.lineWidth = Math.max(1, s * 0.06);
+    ctx.strokeRect(originX, originY, GRID_W * s, GRID_H * s);
+  }
+
+  private paintCells(state: WorldState): void {
     const px = this.image.data;
     for (let i = 0; i < state.cells.length; i++) {
       const cell = state.cells[i];
       const age = state.age[i] ?? 0;
-      let c = COLOR_BG;
+      let c = COLOR_EMPTY;
       if (cell === Cell.Seed) {
         const t = Math.min(age / MATURE_AGE, 1);
         c = [
@@ -50,6 +159,22 @@ export class FieldRenderer {
       px[o + 2] = c[2];
       px[o + 3] = 255;
     }
-    this.ctx.putImageData(this.image, 0, 0);
+    this.cellCtx.putImageData(this.image, 0, 0);
+  }
+
+  private paintGrid(originX: number, originY: number, s: number): void {
+    const { ctx } = this;
+    ctx.strokeStyle = 'rgba(255, 217, 102, 0.10)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x <= GRID_W; x++) {
+      ctx.moveTo(originX + x * s, originY);
+      ctx.lineTo(originX + x * s, originY + GRID_H * s);
+    }
+    for (let y = 0; y <= GRID_H; y++) {
+      ctx.moveTo(originX, originY + y * s);
+      ctx.lineTo(originX + GRID_W * s, originY + y * s);
+    }
+    ctx.stroke();
   }
 }

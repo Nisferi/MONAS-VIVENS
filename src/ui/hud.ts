@@ -1,6 +1,7 @@
 /**
- * ui/hud — панель Ме (ползунки законов), управление и счётчики.
- * Тон текстов — docs/design/11-aesthetics.md: «Начертай Ме», не «настройки».
+ * ui/hud — статистика, кнопки управления видом/временем и панель Ме.
+ * Панель Ме — выезжающий снизу лист; кнопки вида — колонка справа.
+ * Тон текстов — docs/design/11-aesthetics.md.
  */
 import { Cell, type WorldState } from '../core/grid';
 import { ME_LIMITS, type Me } from '../core/rules';
@@ -9,6 +10,9 @@ export interface HudCallbacks {
   onMeChange(me: Me): void;
   onPauseToggle(): boolean; // возвращает новое состояние «на паузе»
   onReseed(): void;
+  onZoomIn(): void;
+  onZoomOut(): void;
+  onViewReset(): void;
 }
 
 interface SliderSpec {
@@ -31,44 +35,51 @@ export class Hud {
   private tickEl!: HTMLElement;
   private seedsEl!: HTMLElement;
 
-  constructor(root: HTMLElement, initialMe: Me, private readonly cb: HudCallbacks) {
+  constructor(initialMe: Me, private readonly cb: HudCallbacks) {
     this.me = { ...initialMe };
-    this.build(root);
+    this.buildStats(document.getElementById('stats') as HTMLElement);
+    this.buildSideButtons(document.getElementById('sidebtns') as HTMLElement);
+    this.buildMePanel(document.getElementById('mepanel') as HTMLElement);
   }
 
-  private build(root: HTMLElement): void {
-    const stats = document.createElement('div');
-    stats.id = 'stats';
+  private buildStats(root: HTMLElement): void {
     this.tickEl = document.createElement('span');
     this.seedsEl = document.createElement('span');
-    stats.append(this.tickEl, this.seedsEl);
-    root.append(stats);
+    root.append(this.tickEl, this.seedsEl);
+  }
 
-    const meTitle = document.createElement('div');
-    meTitle.textContent = '— Начертай Ме —';
-    meTitle.style.textAlign = 'center';
-    root.append(meTitle);
+  private buildSideButtons(root: HTMLElement): void {
+    const btn = (label: string, title: string, onClick: () => void) => {
+      const b = document.createElement('button');
+      b.className = 'iconbtn';
+      b.textContent = label;
+      b.title = title;
+      b.addEventListener('click', onClick);
+      root.append(b);
+      return b;
+    };
+
+    const pauseBtn = btn('⏸', 'Остановить время', () => {
+      const paused = this.cb.onPauseToggle();
+      pauseBtn.textContent = paused ? '▶' : '⏸';
+      pauseBtn.title = paused ? 'Пустить время' : 'Остановить время';
+    });
+    btn('✦', 'Новые Семена', () => this.cb.onReseed());
+    btn('＋', 'Приблизить', () => this.cb.onZoomIn());
+    btn('－', 'Отдалить', () => this.cb.onZoomOut());
+    btn('◻', 'Всё поле', () => this.cb.onViewReset());
+  }
+
+  private buildMePanel(panel: HTMLElement): void {
+    const handle = document.createElement('button');
+    handle.id = 'mehandle';
+    handle.textContent = '— Начертай Ме —';
+    handle.addEventListener('click', () => panel.classList.toggle('hidden'));
+    panel.append(handle);
 
     for (const spec of SLIDERS) {
-      root.append(this.buildSlider(spec));
+      panel.append(this.buildSlider(spec));
     }
-
-    const controls = document.createElement('div');
-    controls.id = 'controls';
-
-    const pauseBtn = document.createElement('button');
-    pauseBtn.textContent = 'Остановить время';
-    pauseBtn.addEventListener('click', () => {
-      const paused = this.cb.onPauseToggle();
-      pauseBtn.textContent = paused ? 'Пустить время' : 'Остановить время';
-    });
-
-    const reseedBtn = document.createElement('button');
-    reseedBtn.textContent = 'Новые Семена';
-    reseedBtn.addEventListener('click', () => this.cb.onReseed());
-
-    controls.append(pauseBtn, reseedBtn);
-    root.append(controls);
   }
 
   private buildSlider(spec: SliderSpec): HTMLElement {
@@ -103,7 +114,7 @@ export class Hud {
     for (let i = 0; i < state.cells.length; i++) {
       if (state.cells[i] === Cell.Seed) seeds++;
     }
-    this.tickEl.textContent = `Тик: ${state.tick}`;
-    this.seedsEl.textContent = `Семена: ${seeds}`;
+    this.tickEl.textContent = `Тик ${state.tick}`;
+    this.seedsEl.textContent = `Семена ${seeds}`;
   }
 }
