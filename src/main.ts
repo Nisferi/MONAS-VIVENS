@@ -21,15 +21,19 @@ import { writeChronicle, type Milestones } from './run/chronicle';
 import { decideEnding } from './run/endings';
 import { computeScore } from './run/score';
 import { detectKnownForms, PATTERNS } from './phi/patterns';
-import { discoverForm, loadWeeklyBest, saveTrialStars, saveWeeklyBest } from './platform/storage';
+import { discoverForm, loadLayoutBest, loadWeeklyBest, saveLayoutBest, saveTrialStars, saveWeeklyBest } from './platform/storage';
 import { currentWeekly } from './run/weekly';
 import { ReplayPlayer, ReplayRecorder, decodeReplay, meNums, type ReplayData } from './run/replay';
 import { makeRun, type RunConfig } from './run/setup';
 import { trialById, trialStars } from './run/trials';
+import {
+  LAYOUTS, PIECE_INFO, dailyLayout, layoutById, poolTotal,
+  type Layout, type PieceKind, type Pool, type Stake,
+} from './run/layouts';
 import { downloadChroniclePng } from './ui/chronicleImage';
 import { CodexScreen } from './ui/codex';
 import { playEndingScene } from './ui/scenes';
-import { THEMES, applyTheme, loadThemeId } from './ui/themes';
+import { activeTheme, applyTheme, loadThemeId } from './ui/themes';
 import {
   STAGE_NAMES, SURVIVAL_THRESHOLD, currentStage, endTick, firstThreatTick, lastThreatEnd,
 } from './run/stages';
@@ -69,6 +73,12 @@ let horizonMax = 0;
 let sowBudget: number | null = null;
 /** Сеятель: после первого пуска времени рука убрана навсегда. */
 let sowingLocked = false;
+/** «Расклад»: остатки фигур и текущая фигура кисти. */
+let layoutPool: Pool | null = null;
+let currentPiece: PieceKind = 's0';
+let activeLayout: Layout | null = null;
+/** Интеграл Φ за партию — счёт ставки «Расцвет». */
+let phiIntegral = 0;
 
 const tracker = new ClusterTracker();
 const neikosMeter = new NeikosMeter();
@@ -112,6 +122,8 @@ function measure(): void {
   clusters = tracker.update(world);
   const neikos = neikosMeter.update(tracker.events);
   report = computePhi(clusters, neikos);
+
+  phiIntegral += report.phi;
 
   // Хроника: место помнит каждый тик прожитой на нём жизни.
   if (heat.length === world.cells.length) {
@@ -184,6 +196,7 @@ function startRun(
   mode: RunConfig['mode'],
   replay: ReplayData | null = null,
   trialId: string | null = null,
+  layoutPick: { id: string; stake: Stake } | null = null,
 ): void {
   cfg = makeRun(seedText, biome, archetype, size, mode);
   // Испытание: фиксированный паззл Сеятеля поверх обычного конфига.
@@ -197,8 +210,25 @@ function startRun(
       };
     }
   }
+  // «Расклад»: фиксированный мир + бюджет фигур + ставка.
+  activeLayout = null;
+  layoutPool = null;
+  if (layoutPick) {
+    const lay = layoutById(layoutPick.id);
+    if (lay) {
+      activeLayout = lay;
+      cfg = {
+        ...makeRun(lay.seedText, lay.biome, 'clay', lay.size, 'sower'),
+        layoutId: lay.id,
+        stake: layoutPick.stake,
+        sowBudget: poolTotal(lay.pool),
+      };
+      layoutPool = { ...lay.pool };
+      currentPiece = nextPiece('wall') ?? 's0';
+    }
+  }
   player = replay ? new ReplayPlayer(replay) : null;
-  if (!player && !trialId) saveSetup({ biome, archetype, size, mode });
+  if (!player && !trialId && !layoutPick) saveSetup({ biome, archetype, size, mode });
   setGridSize(cfg.size);
   renderer.rebuildGrid();
   me = { ...cfg.me };
@@ -219,6 +249,7 @@ function startRun(
   paused = false;
   aftermathNeikosSum = 0;
   aftermathNeikosN = 0;
+  phiIntegral = 0;
 
   // Сеятель: время стоит, в горсти — Семена, кисть уже в руке.
   if (cfg.mode === 'sower') {
@@ -268,7 +299,12 @@ function startRun(
   hud.setLensUnlocked(3, false);
   hud.applyPause(paused);
   hud.applyBrush(brush);
-  hud.setBudget(sowBudget);
+  if (layoutPool) {
+    hud.setBudgetText(layoutBudgetText() || null);
+    applyPieceButton();
+  } else {
+    hud.setBudget(sowBudget);
+  }
   tabletUI.setUnlocked(false);
   tabletUI.refresh();
   renderer.resetView();
@@ -277,9 +313,11 @@ function startRun(
   measure();
   running = true;
   hud.toast(
-    cfg.mode === 'sower'
-      ? `В твоей горсти ${cfg.sowBudget} Семян. Расставь их — и пусти время (⏸).`
-      : 'Мир сотворён. Начертай Ме — и жди, когда форма устоит.',
+    activeLayout
+      ? `Расклад «${activeLayout.name}»: разложи фигуры (● кнопкой меняй тип) и пусти время.`
+      : cfg.mode === 'sower'
+        ? `В твоей горсти ${cfg.sowBudget} Семян. Расставь их — и пусти время (⏸).`
+        : 'Мир сотворён. Начертай Ме — и жди, когда форма устоит.',
   );
 }
 
@@ -340,8 +378,17 @@ function finishRun(): void {
   }
   const chronicle = writeChronicle(milestones, ending, cfg);
 
-  // Испытание: оценка цели и звёзды.
+  // Расклад: счёт по ставке.
   let trialResult: string | undefined;
+  if (activeLayout && cfg.layoutId) {
+    const layScore =
+      cfg.stake === 'bloom' ? Math.round(phiIntegral / 100) : world.tick;
+    const wasBest = player ? false : saveLayoutBest(cfg.layoutId, cfg.stake, layScore);
+    const stakeName = cfg.stake === 'bloom' ? 'Расцвет' : 'Долгожитие';
+    const best = loadLayoutBest(cfg.layoutId, cfg.stake);
+    trialResult = `Расклад «${activeLayout.name}» · ${stakeName}: ${layScore}${wasBest ? ' — рекорд!' : ` (лучший ${best})`}`;
+  }
+
   if (cfg.trialId) {
     const trial = trialById(cfg.trialId);
     if (trial) {
@@ -427,6 +474,12 @@ const hud = new Hud(me, {
     return brush;
   },
   onStrainCycle() {
+    if (layoutPool) {
+      const np = nextPiece(currentPiece);
+      if (np) currentPiece = np;
+      applyPieceButton();
+      return -1; // hud не трогает цвет — applyPieceButton уже всё сделал
+    }
     brushStrain = (brushStrain + 1) % STRAINS;
     return brushStrain;
   },
@@ -464,7 +517,11 @@ function showStart(): void {
     },
     loadBest(),
     (choice) =>
-      startRun(choice.seedText, choice.biome, choice.archetype, choice.size, choice.mode, null, choice.trialId),
+      startRun(
+        choice.seedText, choice.biome, choice.archetype, choice.size, choice.mode,
+        null, choice.trialId,
+        choice.layoutId ? { id: choice.layoutId, stake: choice.stake } : null,
+      ),
     (code) => {
       const data = decodeReplay(code);
       if (!data) return false;
@@ -488,6 +545,54 @@ function showStart(): void {
 /** Посадить одно Семя; единая точка мутации для руки и для реплея. */
 let worldDirty = 0;
 
+/** Следующая фигура расклада с остатком > 0 (после заданной). */
+function nextPiece(after: PieceKind): PieceKind | null {
+  if (!layoutPool) return null;
+  const kinds = PIECE_INFO.map((x) => x.kind);
+  const start = kinds.indexOf(after);
+  for (let k = 1; k <= kinds.length; k++) {
+    const kind = kinds[(start + k) % kinds.length] as PieceKind;
+    if ((layoutPool[kind] ?? 0) > 0) return kind;
+  }
+  return null;
+}
+
+/** Поставить фигуру расклада; единая точка для руки и реплея. */
+function setPiece(i: number, kind: PieceKind): boolean {
+  if (i < 0 || i >= world.cells.length) return false;
+  if (world.terrain[i] === Terrain.Crystal || world.cells[i] !== Cell.Empty) return false;
+  if (kind === 'wall') world.cells[i] = Cell.Signal;
+  else if (kind === 'spore') world.cells[i] = Cell.Spore;
+  else {
+    world.cells[i] = Cell.Seed;
+    world.kind[i] = Number(kind.slice(1));
+  }
+  world.age[i] = 0;
+  worldDirty++;
+  return true;
+}
+
+function layoutBudgetText(): string {
+  if (!layoutPool) return '';
+  return PIECE_INFO
+    .filter((x) => (layoutPool as Pool)[x.kind] > 0)
+    .map((x) => `${x.glyph}${(layoutPool as Pool)[x.kind]}`)
+    .join(' ');
+}
+
+function applyPieceButton(): void {
+  const info = PIECE_INFO.find((x) => x.kind === currentPiece);
+  if (!info) return;
+  const strains = activeTheme.field.strains;
+  const rgb =
+    currentPiece === 'wall'
+      ? activeTheme.field.signal
+      : currentPiece === 'spore'
+        ? activeTheme.field.spore
+        : (strains[Number(currentPiece.slice(1))]?.old ?? [255, 255, 255]);
+  hud.setPieceButton(info.glyph, rgb as [number, number, number], `Кисть кладёт: ${info.name}`);
+}
+
 function setSeed(i: number, strain: number): boolean {
   if (i < 0 || i >= world.cells.length || world.cells[i] === Cell.Seed) return false;
   if (world.terrain[i] === Terrain.Crystal) return false; // на камне не сеют
@@ -502,6 +607,32 @@ function sowAt(cssX: number, cssY: number): void {
   if (player) return; // в чужом мире руки убраны
   const c = renderer.cellAt(cssX, cssY);
   if (!c) return;
+
+  // «Расклад»: кладём текущую фигуру из бюджета.
+  if (layoutPool) {
+    if (sowingLocked || (layoutPool[currentPiece] ?? 0) <= 0) return;
+    const i = c.y * GRID_W + c.x;
+    if (!setPiece(i, currentPiece)) return;
+    layoutPool[currentPiece]--;
+    const ev: { t: number; k: 'sow'; i: number; s: number; p?: 'spore' | 'wall' } = {
+      t: world.tick, k: 'sow', i,
+      s: currentPiece.startsWith('s') ? Number(currentPiece.slice(1)) : 0,
+    };
+    if (currentPiece === 'spore' || currentPiece === 'wall') ev.p = currentPiece;
+    recorder.record(ev);
+    sound.event('sow');
+    if ((layoutPool[currentPiece] ?? 0) === 0) {
+      const np = nextPiece(currentPiece);
+      if (np) {
+        currentPiece = np;
+        applyPieceButton();
+      } else {
+        hud.toast('Расклад выложен. Пусти время (⏸) — и смотри.');
+      }
+    }
+    hud.setBudgetText(layoutBudgetText() || null);
+    return;
+  }
 
   // Сеятель: по одному Семени из горсти, после пуска времени — рука убрана.
   if (sowBudget !== null) {
@@ -538,7 +669,8 @@ function applyReplayEvents(): void {
         me = { ...me, ...ev.me };
         break;
       case 'sow':
-        setSeed(ev.i, ev.s);
+        if (ev.p) setPiece(ev.i, ev.p);
+        else setSeed(ev.i, ev.s);
         break;
       case 'carve':
         tabletEngine.carve(ev.c, ev.a, world);

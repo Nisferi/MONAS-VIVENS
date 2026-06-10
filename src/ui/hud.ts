@@ -200,6 +200,7 @@ export class Hud {
   }
 
   applyStrain(strain: number): void {
+    if (strain < 0) return; // «Расклад» красит кнопку сам
     const ramp = activeTheme.field.strains[strain] ?? activeTheme.field.strains[0];
     if (!ramp) return;
     const [r, g, b] = ramp.old;
@@ -211,6 +212,20 @@ export class Hud {
   /** Горсть Сеятеля: сколько Семян осталось расставить (null — скрыть). */
   setBudget(left: number | null): void {
     this.budgetEl.textContent = left === null ? '' : `Горсть ✦${left}`;
+  }
+
+  /** Произвольный текст горсти (режим «Расклад»). */
+  setBudgetText(text: string | null): void {
+    this.budgetEl.textContent = text ?? '';
+  }
+
+  /** Кнопка фигуры в «Раскладе»: глиф и цвет произвольные. */
+  setPieceButton(glyph: string, rgb: [number, number, number], title: string): void {
+    this.strainBtn.textContent = glyph;
+    const [r, g, b] = rgb;
+    this.strainBtn.style.color = `rgb(${r}, ${g}, ${b})`;
+    this.strainBtn.style.borderColor = `rgb(${r}, ${g}, ${b})`;
+    this.strainBtn.title = title;
   }
 
   /** Голос древних в верхней строке. */

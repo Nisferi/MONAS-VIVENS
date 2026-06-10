@@ -19,7 +19,7 @@ export interface MeNums {
 
 export type ReplayEvent =
   | { t: number; k: 'me'; me: MeNums }
-  | { t: number; k: 'sow'; i: number; s: number }
+  | { t: number; k: 'sow'; i: number; s: number; p?: 'spore' | 'wall' }
   | { t: number; k: 'carve'; c: ConditionSpec; a: ActionKind };
 
 export interface ReplayData {

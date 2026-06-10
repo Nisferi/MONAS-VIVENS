@@ -6,6 +6,8 @@ import {
   type ArchetypeId, type BiomeId, type RunMode,
 } from '../run/setup';
 import { TRIALS } from '../run/trials';
+import { LAYOUTS, STAKE_INFO, dailyLayout, type Stake } from '../run/layouts';
+import { loadLayoutBest } from '../platform/storage';
 import { loadTrialStars } from '../platform/storage';
 import { THEMES, activeTheme, applyTheme } from './themes';
 import type { Ending } from '../run/endings';
@@ -18,6 +20,9 @@ export interface StartChoice {
   mode: RunMode;
   /** Выбранное испытание (путь «Испытание»). */
   trialId: string | null;
+  /** Выбранный расклад и ставка (путь «Расклад»). */
+  layoutId: string | null;
+  stake: Stake;
 }
 
 export interface FinalData {
@@ -80,14 +85,19 @@ export class Screens {
     let archetype = defaults.archetype;
     let size = defaults.size;
     let mode = defaults.mode;
-    let path: 'flow' | 'sower' | 'trial' = mode;
+    let path: 'flow' | 'sower' | 'trial' | 'layout' = mode;
     let trialId = TRIALS[0]?.id ?? '';
+    const daily = dailyLayout();
+    let layoutId = daily.id;
+    let stake: Stake = 'longevity';
 
     const worldGroups = document.createElement('div');
     const trialGroup = document.createElement('div');
+    const layoutGroup = document.createElement('div');
     const syncPath = () => {
-      worldGroups.style.display = path === 'trial' ? 'none' : '';
+      worldGroups.style.display = path === 'trial' || path === 'layout' ? 'none' : '';
       trialGroup.style.display = path === 'trial' ? '' : 'none';
+      layoutGroup.style.display = path === 'layout' ? '' : 'none';
     };
 
     panel.append(
@@ -97,11 +107,12 @@ export class Screens {
           { id: 'flow', name: 'Поток', desc: 'мир рождается из первичного бульона' },
           { id: 'sower', name: 'Сеятель', desc: `пустой мир и ${SOWER_BUDGET} Семян в горсти` },
           { id: 'trial', name: 'Испытание', desc: 'паззлы Сеятеля с целью и звёздами' },
+          { id: 'layout', name: 'Расклад', desc: 'фигуры и ставка: долгожитие или расцвет' },
         ],
         path,
         (id) => {
           path = id as typeof path;
-          if (path !== 'trial') mode = path;
+          if (path === 'flow' || path === 'sower') mode = path;
           syncPath();
         },
       ),
@@ -133,6 +144,32 @@ export class Screens {
       ),
     );
     panel.append(trialGroup);
+
+    const layList = [daily, ...LAYOUTS];
+    layoutGroup.append(
+      this.chipGroup(
+        'Расклады',
+        layList.map((l) => {
+          const bl = loadLayoutBest(l.id, 'longevity');
+          const bb = loadLayoutBest(l.id, 'bloom');
+          const best = bl || bb ? ` · ${bl}/${bb}` : '';
+          return { id: l.id, name: l.name + best, desc: l.desc };
+        }),
+        layoutId,
+        (id) => (layoutId = id),
+      ),
+      this.chipGroup(
+        'Ставка',
+        (Object.keys(STAKE_INFO) as Stake[]).map((k) => ({
+          id: k,
+          name: STAKE_INFO[k].name,
+          desc: STAKE_INFO[k].desc,
+        })),
+        stake,
+        (id) => (stake = id as Stake),
+      ),
+    );
+    panel.append(layoutGroup);
     syncPath();
 
     // Стиль мира: применяется сразу — живой предпросмотр.
@@ -164,6 +201,8 @@ export class Screens {
       onStart({
         biome, archetype, seedText, size, mode,
         trialId: path === 'trial' ? trialId : null,
+        layoutId: path === 'layout' ? layoutId : null,
+        stake,
       });
     });
     panel.append(start);

@@ -64,6 +64,9 @@ export interface RunConfig {
   sowBudget: number;
   /** Испытание, если партия — паззл. */
   trialId: string | null;
+  /** Расклад и ставка, если партия — «Расклад». */
+  layoutId: string | null;
+  stake: 'longevity' | 'bloom';
   /** Рельеф: сколько гроздей кристаллов и родников родит seed. */
   terrain: { crystalClusters: number; springs: number };
 }
@@ -131,6 +134,8 @@ export function makeRun(
     me, density, startEnergy, mindPhi, horizonScale,
     sowBudget: SOWER_BUDGET,
     trialId: null,
+    layoutId: null,
+    stake: 'longevity',
     terrain,
   };
 }

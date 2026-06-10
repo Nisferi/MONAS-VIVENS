@@ -136,6 +136,28 @@ export function saveTrialStars(id: string, stars: number): void {
   }
 }
 
+/** Рекорды раскладов: ключ — раскладId:ставка. */
+const LAYOUT_KEY = 'monas.layout';
+
+export function loadLayoutBest(layoutId: string, stake: string): number {
+  try {
+    return Number(localStorage.getItem(`${LAYOUT_KEY}.${layoutId}.${stake}`)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function saveLayoutBest(layoutId: string, stake: string, score: number): boolean {
+  if (score <= loadLayoutBest(layoutId, stake)) return false;
+  try {
+    localStorage.setItem(`${LAYOUT_KEY}.${layoutId}.${stake}`, String(score));
+  } catch {
+    /* ок */
+  }
+  cloudMirror(`${LAYOUT_KEY}.${layoutId}.${stake}`, String(score));
+  return true;
+}
+
 export function loadEcho(size: number): number[] | null {
   try {
     const raw = localStorage.getItem(`${ECHO_KEY}.${size}`);
