@@ -204,6 +204,7 @@ export class FieldRenderer {
     prev: WorldState | null = null,
     frac = 1,
     heat: Float32Array | null = null,
+    aim: { x: number; y: number; rgb: [number, number, number] } | null = null,
   ): void {
     if (lens === 4 && heat) paintChronicle(this.cellCtx, this.image, heat);
     else this.paintCells(state, prev, frac);
@@ -221,7 +222,8 @@ export class FieldRenderer {
     if (lens === 1 || lens === 4) {
       // Линза 4 — Хроника: тепловая карта уже в cellCanvas.
       ctx.drawImage(this.cellCanvas, originX, originY, GRID_W * s, GRID_H * s);
-      if (lens === 1 && s >= GRID_LINES_FROM) this.paintGrid(originX, originY, s);
+      // При прицеливании сетка видна всегда — игрок думает, куда заложить Семя.
+      if (lens === 1 && (s >= GRID_LINES_FROM || aim)) this.paintGrid(originX, originY, s);
     } else if (lens === 2) {
       // Линза Филии: клетки — лишь тень внизу, поверх — узлы и нити.
       ctx.globalAlpha = 0.18;
@@ -243,6 +245,28 @@ export class FieldRenderer {
     ctx.strokeStyle = activeTheme.frame;
     ctx.lineWidth = Math.max(1, s * 0.06);
     ctx.strokeRect(originX, originY, GRID_W * s, GRID_H * s);
+
+    // Прицел посева: пульсирующая рамка + полупрозрачная фигура + перекрестье.
+    if (aim) {
+      const ax = originX + aim.x * s;
+      const ay = originY + aim.y * s;
+      const [r, g, b] = aim.rgb;
+      const pulse = 0.55 + 0.35 * Math.sin(performance.now() / 220);
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.55)`;
+      ctx.fillRect(ax, ay, s, s);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${pulse.toFixed(2)})`;
+      ctx.lineWidth = Math.max(2, s * 0.18);
+      ctx.strokeRect(ax - s * 0.25, ay - s * 0.25, s * 1.5, s * 1.5);
+      // Перекрестье до краёв поля — видно, в каком ряду и столбце стоишь.
+      ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, 0.25)`;
+      ctx.lineWidth = Math.max(1, s * 0.08);
+      ctx.beginPath();
+      ctx.moveTo(originX, ay + s / 2);
+      ctx.lineTo(originX + GRID_W * s, ay + s / 2);
+      ctx.moveTo(ax + s / 2, originY);
+      ctx.lineTo(ax + s / 2, originY + GRID_H * s);
+      ctx.stroke();
+    }
   }
 
   private cellColor(state: WorldState, i: number): Rgb {

@@ -312,6 +312,7 @@ function startRun(
     hud.toast('Чужой мир. Смотри, как творил другой, — руки убраны.');
   }
 
+  aim = null;
   hud.resetRunUi();
   hud.markLens(1);
   hud.setLensUnlocked(2, false);
@@ -327,6 +328,10 @@ function startRun(
   tabletUI.setUnlocked(false);
   tabletUI.refresh();
   renderer.resetView();
+  // Фаза посева начинается с приближения: клетки видны, сетка включена.
+  if (cfg.mode === 'sower' && !player) {
+    renderer.zoomAt(2.5, window.innerWidth / 2, window.innerHeight / 2);
+  }
 
   sound.init(); // нажатие «Сотвори мир» — жест, разрешающий звук
   measure();
@@ -601,7 +606,26 @@ const tabletUI = new TabletUI(hud.tabletsPane, tabletEngine, {
   },
 });
 
-function showStart(): void {
+function acceptCode(code: string): boolean {
+  // Вызов на дуэль: играешь тот же мир сам, реплей соперника — доказательство.
+  const duel = decodeDuel(code);
+  if (duel) {
+    pendingDuel = duel;
+    const c = duel.data.cfg;
+    // Эхо соперника — из его реплея: миры дуэлянтов идентичны.
+    startRun(c.seedText, c.biome, c.archetype, c.size, c.mode, null, null, null, duel.data.echo);
+    hud.toast(`Дуэль принята! Счёт соперника: ${duel.score}. Тот же мир — твой ход.`);
+    return true;
+  }
+  const data = decodeReplay(code);
+  if (!data) return false;
+  pendingDuel = null;
+  startRun(data.cfg.seedText, data.cfg.biome, data.cfg.archetype, data.cfg.size, data.cfg.mode, data);
+  return true;
+}
+
+/** Настройка нового мира: путь, место, семя, простор, стиль. */
+function showSetup(): void {
   const saved = loadSetup();
   screens.showStart(
     {
@@ -617,42 +641,66 @@ function showStart(): void {
         null, choice.trialId,
         choice.layoutId ? { id: choice.layoutId, stake: choice.stake } : null,
       ),
-    (code) => {
-      // Вызов на дуэль: играешь тот же мир сам, реплей соперника — доказательство.
-      const duel = decodeDuel(code);
-      if (duel) {
-        pendingDuel = duel;
-        const c = duel.data.cfg;
-        // Эхо соперника — из его реплея: миры дуэлянтов идентичны.
-        startRun(c.seedText, c.biome, c.archetype, c.size, c.mode, null, null, null, duel.data.echo);
-        hud.toast(`Дуэль принята! Счёт соперника: ${duel.score}. Тот же мир — твой ход.`);
-        return true;
-      }
-      const data = decodeReplay(code);
-      if (!data) return false;
-      pendingDuel = null;
-      startRun(data.cfg.seedText, data.cfg.biome, data.cfg.archetype, data.cfg.size, data.cfg.mode, data);
-      return true;
-    },
-    () => codex.show(),
-    {
-      label: `Мир недели «${currentWeekly().seedText}»`,
-      best: loadWeeklyBest(currentWeekly().seedText),
-      onPlay() {
-        const w = currentWeekly();
-        startRun(w.seedText, w.biome, w.archetype, w.size, 'flow');
+    showStart,
+  );
+}
+
+/** Главное меню: все пути игры на виду. */
+function showStart(): void {
+  const w = currentWeekly();
+  const weeklyBest = loadWeeklyBest(w.seedText);
+  const save = loadHearth();
+  screens.showMenu(
+    'MONAS VIVENS',
+    'Ты — закон, а не рука. Проведи мир от слепой клетки до разума, видящего будущее.',
+    [
+      {
+        icon: '✦', label: 'Новый мир',
+        desc: 'Поток · Сеятель · Испытания · Расклады',
+        onClick: showSetup,
       },
-    },
-    (() => {
-      const save = loadHearth();
-      return {
-        label: save
-          ? `Очаг: тик ${JSON.parse(save.world).tick}, один ${fmtAbsence(elapsedTicks(save))}`
-          : 'Разжечь Очаг — вечный мир',
-        onPlay: startHearth,
-      };
-    })(),
-    { onPlay: startBreath },
+      {
+        icon: '🔥', label: save ? 'Очаг — вернуться к миру' : 'Очаг — вечный мир',
+        desc: save
+          ? `тик ${(JSON.parse(save.world) as { tick: number }).tick}, один ${fmtAbsence(elapsedTicks(save))}`
+          : 'тамагочи: живёт в реальном времени, даже когда вкладка закрыта',
+        onClick: () => {
+          screens.hide();
+          startHearth();
+        },
+      },
+      {
+        icon: '☯', label: 'Дыхание',
+        desc: '10 минут созерцания: мир дышит с тобой, руки убраны',
+        onClick: () => {
+          screens.hide();
+          startBreath();
+        },
+      },
+      {
+        icon: '🌍', label: `Мир недели «${w.seedText}»`,
+        desc: weeklyBest > 0 ? `один на всех до понедельника · лучший ${weeklyBest}` : 'один на всех до понедельника',
+        onClick: () => {
+          screens.hide();
+          startRun(w.seedText, w.biome, w.archetype, w.size, 'flow');
+        },
+      },
+      {
+        icon: '⚔', label: 'Чужой мир / Дуэль',
+        desc: 'вставь код реплея или вызова',
+        onClick: () => {
+          const code = window.prompt('Код реплея (MONAS1:…) или вызова (MONAS-DUEL:…):');
+          if (code && acceptCode(code)) screens.hide();
+          else if (code) hud.toast('Код не прочитан.');
+        },
+      },
+      {
+        icon: '📖', label: 'Кодекс форм',
+        desc: 'существа, которых видели твои миры',
+        onClick: () => codex.show(),
+      },
+    ],
+    loadBest(),
   );
 }
 
@@ -660,6 +708,22 @@ function showStart(): void {
 
 /** Посадить одно Семя; единая точка мутации для руки и для реплея. */
 let worldDirty = 0;
+/** Прицел посева: игрок целится, потом подтверждает — палец не закрывает клетку. */
+let aim: { x: number; y: number } | null = null;
+
+function sowingPhase(): boolean {
+  return running && !player && !sowingLocked && (sowBudget !== null || layoutPool !== null);
+}
+
+function aimRgb(): [number, number, number] {
+  const f = activeTheme.field;
+  if (layoutPool) {
+    if (currentPiece === 'wall') return f.signal;
+    if (currentPiece === 'spore') return f.spore;
+    return (f.strains[Number(currentPiece.slice(1))]?.old ?? [255, 255, 255]) as [number, number, number];
+  }
+  return (f.strains[brushStrain]?.old ?? [255, 255, 255]) as [number, number, number];
+}
 
 /** Следующая фигура расклада с остатком > 0 (после заданной). */
 function nextPiece(after: PieceKind): PieceKind | null {
@@ -719,11 +783,9 @@ function setSeed(i: number, strain: number): boolean {
   return true;
 }
 
-function sowAt(cssX: number, cssY: number): void {
-  if (player || breathMode) return; // в чужом мире и в созерцании руки убраны
-  const c = renderer.cellAt(cssX, cssY);
-  if (!c) return;
-
+/** Посадить в клетку (x, y) — из прицела или с клавиатуры. */
+function plantAt(x: number, y: number): void {
+  const c = { x, y };
   // «Расклад»: кладём текущую фигуру из бюджета.
   if (layoutPool) {
     if (sowingLocked || (layoutPool[currentPiece] ?? 0) <= 0) return;
@@ -760,6 +822,17 @@ function sowAt(cssX: number, cssY: number): void {
     hud.setBudget(sowBudget);
     sound.event('sow');
     if (sowBudget === 0) hud.toast('Горсть пуста. Пусти время (⏸) — и смотри, что взойдёт.');
+  }
+}
+
+function sowAt(cssX: number, cssY: number): void {
+  if (player || breathMode) return; // в чужом мире и в созерцании руки убраны
+  const c = renderer.cellAt(cssX, cssY);
+  if (!c) return;
+
+  // Фаза посева: палец только целится, сажает кнопка «Посадить».
+  if (sowingPhase()) {
+    aim = c;
     return;
   }
 
@@ -802,8 +875,10 @@ function togglePause(): boolean {
   if (!paused && sowBudget !== null && !sowingLocked) {
     sowingLocked = true;
     brush = false;
+    aim = null;
     hud.applyBrush(false);
     hud.setBudget(null);
+    hud.setBudgetText(null);
     hud.toast('Жребий брошен. Дальше мир растёт сам.');
   }
   return paused;
@@ -900,6 +975,27 @@ window.addEventListener('keydown', (e) => {
       break;
     case 'KeyM':
       sound.toggleMute();
+      break;
+    case 'ArrowUp':
+    case 'ArrowDown':
+    case 'ArrowLeft':
+    case 'ArrowRight': {
+      if (!sowingPhase()) break;
+      e.preventDefault();
+      const cur = aim ?? { x: GRID_W >> 1, y: GRID_H >> 1 };
+      const dx = e.code === 'ArrowLeft' ? -1 : e.code === 'ArrowRight' ? 1 : 0;
+      const dy = e.code === 'ArrowUp' ? -1 : e.code === 'ArrowDown' ? 1 : 0;
+      aim = {
+        x: (cur.x + dx + GRID_W) % GRID_W,
+        y: (cur.y + dy + GRID_H) % GRID_H,
+      };
+      break;
+    }
+    case 'Enter':
+      if (sowingPhase() && aim) {
+        e.preventDefault();
+        plantAt(aim.x, aim.y);
+      }
       break;
   }
 });
@@ -1005,13 +1101,54 @@ function frame(now: number): void {
   renderer.setFutureAlt(lenses.current === 3 && altGhost ? altGhost.cells : null);
   hud.setScrub(lenses.current === 3 && !!snap, snap ? snap.at : null);
 
-  const renderKey = `${world.tick}|${lenses.current}|${renderer.version}|${worldDirty}|${scrubFrac}|${Math.round(frac * 50)}|${altGhost ? 1 : 0}`;
-  if (!paused || renderKey !== lastRenderKey) {
-    renderer.render(world, lenses.current, clusters, prevWorld, frac, heat);
+  const aiming = sowingPhase() && aim ? aim : null;
+  const renderKey = `${world.tick}|${lenses.current}|${renderer.version}|${worldDirty}|${scrubFrac}|${Math.round(frac * 50)}|${altGhost ? 1 : 0}|${aiming ? `${aiming.x},${aiming.y}` : ''}`;
+  if (!paused || aiming || renderKey !== lastRenderKey) {
+    renderer.render(
+      world, lenses.current, clusters, prevWorld, frac, heat,
+      aiming ? { x: aiming.x, y: aiming.y, rgb: aimRgb() } : null,
+    );
     lastRenderKey = renderKey;
   }
+  plantBtn.classList.toggle('show', !!aiming);
   hud.update(world, report, lenses.unlocked3 ? horizonNow() : null, STAGE_NAMES[stage]);
   requestAnimationFrame(frame);
+}
+
+// ---- Кнопка меню и кнопка посадки ----
+
+const menuBtn = document.createElement('button');
+menuBtn.id = 'menubtn';
+menuBtn.className = 'iconbtn';
+menuBtn.textContent = '☰';
+menuBtn.title = 'В меню';
+menuBtn.addEventListener('click', returnToMenu);
+document.body.append(menuBtn);
+
+const plantBtn = document.createElement('button');
+plantBtn.id = 'plantbtn';
+plantBtn.textContent = '⤓ Посадить';
+plantBtn.addEventListener('click', () => {
+  if (aim) plantAt(aim.x, aim.y);
+});
+document.body.append(plantBtn);
+
+function returnToMenu(): void {
+  if (running && hearthMode) {
+    persistHearth();
+    running = false;
+    hearthMode = false;
+    hud.toast('Очаг сохранён. Мир продолжит жить без тебя.');
+    showStart();
+    return;
+  }
+  if (running) {
+    if (!window.confirm('Покинуть мир и вернуться в меню? Партия завершится без летописи.')) return;
+    running = false;
+    breathMode = false;
+    (document.getElementById('mepanel') as HTMLElement).style.display = '';
+  }
+  showStart();
 }
 
 document.addEventListener('visibilitychange', () => {

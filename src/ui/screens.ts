@@ -46,6 +46,13 @@ export interface FinalCallbacks {
   onCopyDuel(): string | null;
 }
 
+export interface MenuItem {
+  icon: string;
+  label: string;
+  desc?: string;
+  onClick(): void;
+}
+
 export class Screens {
   private readonly el: HTMLElement;
 
@@ -55,15 +62,57 @@ export class Screens {
     document.body.append(this.el);
   }
 
+  /** Главное меню: все пути игры на виду. */
+  showMenu(title: string, sub: string, items: MenuItem[], best: number): void {
+    this.el.innerHTML = '';
+    this.el.classList.add('show');
+    const panel = document.createElement('div');
+    panel.className = 'panel';
+
+    const h = document.createElement('h1');
+    h.textContent = title;
+    const subEl = document.createElement('p');
+    subEl.className = 'sub';
+    subEl.textContent = sub;
+    panel.append(h, subEl);
+    if (best > 0) {
+      const bestEl = document.createElement('p');
+      bestEl.className = 'best';
+      bestEl.textContent = `Лучший счёт: ${best}`;
+      panel.append(bestEl);
+    }
+
+    const list = document.createElement('div');
+    list.className = 'menulist';
+    for (const item of items) {
+      const b = document.createElement('button');
+      b.className = 'menuitem';
+      const ic = document.createElement('span');
+      ic.className = 'menuicon';
+      ic.textContent = item.icon;
+      const tx = document.createElement('span');
+      tx.className = 'menutext';
+      const lb = document.createElement('b');
+      lb.textContent = item.label;
+      tx.append(lb);
+      if (item.desc) {
+        const d = document.createElement('small');
+        d.textContent = item.desc;
+        tx.append(d);
+      }
+      b.append(ic, tx);
+      b.addEventListener('click', () => item.onClick());
+      list.append(b);
+    }
+    panel.append(list);
+    this.el.append(panel);
+  }
+
   showStart(
     defaults: { biome: BiomeId; archetype: ArchetypeId; size: number; mode: RunMode },
     best: number,
     onStart: (choice: StartChoice) => void,
-    onReplay?: (code: string) => boolean,
-    onCodex?: () => void,
-    weekly?: { label: string; best: number; onPlay: () => void },
-    hearth?: { label: string; onPlay: () => void },
-    breath?: { onPlay: () => void },
+    onBack?: () => void,
   ): void {
     this.el.innerHTML = '';
     this.el.classList.add('show');
@@ -211,64 +260,12 @@ export class Screens {
     });
     panel.append(start);
 
-    const extras = document.createElement('div');
-    extras.className = 'sharerow';
-    if (weekly) {
-      const weekBtn = document.createElement('button');
-      weekBtn.textContent =
-        weekly.best > 0
-          ? `🌍 ${weekly.label} · лучший ${weekly.best}`
-          : `🌍 ${weekly.label}`;
-      weekBtn.title = 'Мир недели: один seed на всех до понедельника';
-      weekBtn.addEventListener('click', () => {
-        this.hide();
-        weekly.onPlay();
-      });
-      extras.append(weekBtn);
-    }
-    if (hearth) {
-      const hearthBtn = document.createElement('button');
-      hearthBtn.textContent = `🔥 ${hearth.label}`;
-      hearthBtn.title = 'Очаг: мир живёт в реальном времени, даже когда вкладка закрыта';
-      hearthBtn.addEventListener('click', () => {
-        this.hide();
-        hearth.onPlay();
-      });
-      extras.append(hearthBtn);
-    }
-    if (breath) {
-      const breathBtn = document.createElement('button');
-      breathBtn.textContent = '☯ Дыхание';
-      breathBtn.title = '10 минут созерцания: мир дышит с тобой, руки убраны';
-      breathBtn.addEventListener('click', () => {
-        this.hide();
-        breath.onPlay();
-      });
-      extras.append(breathBtn);
-    }
-    if (onCodex) {
-      const codexBtn = document.createElement('button');
-      codexBtn.textContent = '✦ Кодекс форм';
-      codexBtn.addEventListener('click', onCodex);
-      extras.append(codexBtn);
-    }
-    if (extras.childElementCount > 0) panel.append(extras);
-
-    // Чужой мир: вставь код реплея — и история повторится у тебя.
-    if (onReplay) {
-      const repRow = document.createElement('div');
-      repRow.className = 'seedrow';
-      const repInput = document.createElement('input');
-      repInput.type = 'text';
-      repInput.placeholder = 'код реплея или вызова на дуэль';
-      const repBtn = document.createElement('button');
-      repBtn.textContent = '▶ Чужой мир';
-      repBtn.addEventListener('click', () => {
-        if (onReplay(repInput.value)) this.hide();
-        else repInput.value = 'код не прочитан';
-      });
-      repRow.append(repInput, repBtn);
-      panel.append(repRow);
+    if (onBack) {
+      const back = document.createElement('button');
+      back.className = 'codexbtn';
+      back.textContent = '← Меню';
+      back.addEventListener('click', onBack);
+      panel.append(back);
     }
 
     this.el.append(panel);
