@@ -192,8 +192,14 @@ export class FieldRenderer {
     }
   }
 
-  render(state: WorldState, lens: LensId = 1, clusters: Cluster[] = []): void {
-    this.paintCells(state);
+  render(
+    state: WorldState,
+    lens: LensId = 1,
+    clusters: Cluster[] = [],
+    prev: WorldState | null = null,
+    frac = 1,
+  ): void {
+    this.paintCells(state, prev, frac);
 
     const { ctx, canvas } = this;
     const s = this.scale();
@@ -231,30 +237,47 @@ export class FieldRenderer {
     ctx.strokeRect(originX, originY, GRID_W * s, GRID_H * s);
   }
 
-  private paintCells(state: WorldState): void {
+  private cellColor(state: WorldState, i: number): Rgb {
+    const cell = state.cells[i];
+    if (cell === Cell.Seed) {
+      const t = Math.min((state.age[i] ?? 0) / MATURE_AGE, 1);
+      const ramp =
+        STRAIN_COLORS[state.kind[i] ?? 0] ?? (STRAIN_COLORS[0] as { young: Rgb; old: Rgb });
+      const { young, old } = ramp;
+      return [
+        young[0] + (old[0] - young[0]) * t,
+        young[1] + (old[1] - young[1]) * t,
+        young[2] + (old[2] - young[2]) * t,
+      ];
+    }
+    if (cell === Cell.Signal) return COLOR_SIGNAL;
+    if (cell === Cell.Ash) return COLOR_ASH;
+    return COLOR_EMPTY;
+  }
+
+  /**
+   * Дыхание поля: между тиками цвет каждой клетки плавно перетекает
+   * из прошлого состояния в нынешнее — умершие гаснут, рождённые разгораются.
+   */
+  private paintCells(state: WorldState, prev: WorldState | null, frac: number): void {
     const px = this.image.data;
+    const blend = prev && prev.cells.length === state.cells.length && frac < 1;
+    const inv = 1 - frac;
     for (let i = 0; i < state.cells.length; i++) {
-      const cell = state.cells[i];
-      const age = state.age[i] ?? 0;
-      let c = COLOR_EMPTY;
-      if (cell === Cell.Seed) {
-        const t = Math.min(age / MATURE_AGE, 1);
-        const ramp = STRAIN_COLORS[state.kind[i] ?? 0] ?? (STRAIN_COLORS[0] as { young: Rgb; old: Rgb });
-        const { young, old } = ramp;
-        c = [
-          young[0] + (old[0] - young[0]) * t,
-          young[1] + (old[1] - young[1]) * t,
-          young[2] + (old[2] - young[2]) * t,
-        ];
-      } else if (cell === Cell.Signal) {
-        c = COLOR_SIGNAL;
-      } else if (cell === Cell.Ash) {
-        c = COLOR_ASH;
+      const c = this.cellColor(state, i);
+      let r = c[0];
+      let g = c[1];
+      let b = c[2];
+      if (blend && prev) {
+        const p = this.cellColor(prev, i);
+        r = p[0] * inv + r * frac;
+        g = p[1] * inv + g * frac;
+        b = p[2] * inv + b * frac;
       }
       const o = i * 4;
-      px[o] = c[0];
-      px[o + 1] = c[1];
-      px[o + 2] = c[2];
+      px[o] = r;
+      px[o + 1] = g;
+      px[o + 2] = b;
       px[o + 3] = 255;
     }
     this.cellCtx.putImageData(this.image, 0, 0);

@@ -24,6 +24,7 @@ import { makeRun, type RunConfig } from './run/setup';
 import { trialById, trialStars } from './run/trials';
 import { downloadChroniclePng } from './ui/chronicleImage';
 import { CodexScreen } from './ui/codex';
+import { playEndingScene } from './ui/scenes';
 import {
   STAGE_NAMES, SURVIVAL_THRESHOLD, currentStage, endTick, firstThreatTick, lastThreatEnd,
 } from './run/stages';
@@ -330,24 +331,27 @@ function finishRun(): void {
     }
   }
 
-  screens.showFinal(
-    {
-      ending, score, best: Math.max(score, loadBest()), isRecord, chronicle,
-      seedText: cfg.seedText,
-      ...(trialResult !== undefined ? { trialResult } : {}),
-    },
-    {
-      onRestart: showStart,
-      onExportPng: () =>
-        downloadChroniclePng(world, cfg.size, {
-          title: ending.title,
-          chronicle,
-          seedText: cfg.seedText,
-          score,
-          phi: report.phi,
-        }),
-      onCopyReplay: () => (player ? null : recorder.encode()),
-    },
+  // Сцена концовки — образ перед летописью.
+  playEndingScene(ending.id, () =>
+    screens.showFinal(
+      {
+        ending, score, best: Math.max(score, loadBest()), isRecord, chronicle,
+        seedText: cfg.seedText,
+        ...(trialResult !== undefined ? { trialResult } : {}),
+      },
+      {
+        onRestart: showStart,
+        onExportPng: () =>
+          downloadChroniclePng(world, cfg.size, {
+            title: ending.title,
+            chronicle,
+            seedText: cfg.seedText,
+            score,
+            phi: report.phi,
+          }),
+        onCopyReplay: () => (player ? null : recorder.encode()),
+      },
+    ),
   );
 }
 
@@ -620,24 +624,31 @@ let lastTime = performance.now();
 let accumulator = 0;
 let lastStage = '';
 let lastAmbient = 0;
+/** Мир прошлого тика — для дыхания поля между шагами. */
+let prevWorld: WorldState | null = null;
 
 function frame(now: number): void {
   accumulator += now - lastTime;
   lastTime = now;
   if (accumulator > 1000) accumulator = 1000;
 
+  let frac = 1;
   if (running && !paused) {
     const stepMs = TICK_MS / (SPEEDS[speedIdx] as number);
     while (accumulator >= stepMs && running) {
       applyReplayEvents();
+      prevWorld = world;
       world = tick(world, me);
       measure();
       checkEnd();
       accumulator -= stepMs;
     }
     refreshForecast();
+    // Дыхание между тиками: доля пути от прошлого состояния к нынешнему.
+    if (running) frac = Math.min(1, accumulator / stepMs);
   } else {
     accumulator = 0;
+    prevWorld = null;
   }
 
   const stage = currentStage(world, me, lenses.unlocked2, lenses.unlocked3);
@@ -670,7 +681,7 @@ function frame(now: number): void {
   renderer.setFutureAlt(lenses.current === 3 && altGhost ? altGhost.cells : null);
   hud.setScrub(lenses.current === 3 && !!snap, snap ? snap.at : null);
 
-  renderer.render(world, lenses.current, clusters);
+  renderer.render(world, lenses.current, clusters, prevWorld, frac);
   hud.update(world, report, lenses.unlocked3 ? horizonNow() : null, STAGE_NAMES[stage]);
   requestAnimationFrame(frame);
 }
