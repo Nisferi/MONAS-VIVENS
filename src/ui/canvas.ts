@@ -289,10 +289,12 @@ export class FieldRenderer {
       const t = Math.min((state.age[i] ?? 0) / MATURE_AGE, 1);
       const ramp = f.strains[state.kind[i] ?? 0] ?? (f.strains[0] as { young: Rgb; old: Rgb });
       const { young, old } = ramp;
+      // Геном виден глазами: смелые горят чуть ярче, осторожные — глуше.
+      const k = 1.12 - 0.27 * ((state.gene[i] ?? 128) / 255);
       return [
-        young[0] + (old[0] - young[0]) * t,
-        young[1] + (old[1] - young[1]) * t,
-        young[2] + (old[2] - young[2]) * t,
+        Math.min(255, (young[0] + (old[0] - young[0]) * t) * k),
+        Math.min(255, (young[1] + (old[1] - young[1]) * t) * k),
+        Math.min(255, (young[2] + (old[2] - young[2]) * t) * k),
       ];
     }
     if (cell === Cell.Signal) return f.signal;

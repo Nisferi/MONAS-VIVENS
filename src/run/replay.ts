@@ -59,6 +59,18 @@ export class ReplayRecorder {
     this.data?.events.push(ev);
   }
 
+  /** Откат последнего события заданного вида («рука дрогнула»). */
+  popLast(kind: ReplayEvent['k']): ReplayEvent | null {
+    const evs = this.data?.events;
+    if (!evs) return null;
+    for (let i = evs.length - 1; i >= 0; i--) {
+      if ((evs[i] as ReplayEvent).k === kind) {
+        return evs.splice(i, 1)[0] as ReplayEvent;
+      }
+    }
+    return null;
+  }
+
   /** Компактный код реплея для буфера обмена. */
   encode(): string | null {
     if (!this.data) return null;

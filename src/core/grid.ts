@@ -48,9 +48,15 @@ export const enum Terrain {
   Spring = 2,
 }
 
-/** Роды Семян — культуры, не фракции: правила для всех одни, различие в цвете и наследии. */
-export const STRAINS = 3;
-export const STRAIN_NAMES = ['Род Огня', 'Род Нефрита', 'Род Аметиста'] as const;
+/**
+ * Роды Семян — культуры, не фракции: правила для всех одни, различие
+ * в цвете и наследии. Четвёртый род — Заря — не сеется рукой: он рождается
+ * лишь там, где сошлись все три рода (награда за слияние культур).
+ */
+export const STRAINS = 4;
+export const BASE_STRAINS = 3;
+export const HYBRID_STRAIN = 3;
+export const STRAIN_NAMES = ['Род Огня', 'Род Нефрита', 'Род Аметиста', 'Род Зари'] as const;
 
 export interface WorldState {
   /** Номер тика с начала партии. */
@@ -91,7 +97,7 @@ export function createWorld(
   for (let i = 0; i < GRID_SIZE; i++) {
     if (land[i] !== Terrain.Crystal && rng() < density) {
       cells[i] = Cell.Seed;
-      kind[i] = Math.floor(rng() * STRAINS);
+      kind[i] = Math.floor(rng() * BASE_STRAINS); // Заря не сеется — только рождается
       gene[i] = Math.floor(grng() * 256); // первое поколение — случайный разброс осторожности
     }
   }

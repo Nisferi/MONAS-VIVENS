@@ -38,6 +38,29 @@ export interface HearthSave {
 }
 
 const KEY = 'monas.hearth';
+const RESUME_KEY = 'monas.resume';
+
+/** Прерванная обычная партия: продолжить с того же тика (без домотки). */
+export function saveResume(save: HearthSave): void {
+  try {
+    localStorage.setItem(RESUME_KEY, JSON.stringify(save));
+  } catch { /* ок */ }
+}
+
+export function loadResume(): HearthSave | null {
+  try {
+    const raw = localStorage.getItem(RESUME_KEY);
+    return raw ? (JSON.parse(raw) as HearthSave) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearResume(): void {
+  try {
+    localStorage.removeItem(RESUME_KEY);
+  } catch { /* ок */ }
+}
 
 export function saveHearth(save: HearthSave): void {
   try {

@@ -4,7 +4,8 @@
  * Нейкос-шторм → развязка → концовка + летопись + счёт.
  */
 import {
-  Cell, GRID_H, GRID_W, STRAINS, Terrain, createWorld, setGridSize, type WorldState,
+  BASE_STRAINS, Cell, GRID_H, GRID_W, HYBRID_STRAIN, Terrain,
+  createWorld, setGridSize, type WorldState,
 } from './core/grid';
 import { generateTerrain } from './core/terrain';
 import { DEFAULT_ME, tick, type Me } from './core/rules';
@@ -17,15 +18,17 @@ import { computePhi, type PhiReport } from './phi/phi';
 import { initPwa } from './platform/pwa';
 import { loadBest, loadEcho, loadSetup, saveBest, saveEcho, saveSetup } from './platform/storage';
 import { initTelegram } from './platform/telegram';
-import { writeChronicle, type Milestones } from './run/chronicle';
+import { writeChronicle, type Milestones, type NamedFormNote } from './run/chronicle';
 import { decideEnding } from './run/endings';
 import { computeScore } from './run/score';
 import { detectKnownForms, PATTERNS } from './phi/patterns';
+import { NAME_AGE, NAME_SIZE, formName, type NamedForm } from './phi/names';
+import { GoalsPanel } from './ui/goals';
 import { discoverForm, loadLayoutBest, loadWeeklyBest, saveLayoutBest, saveTrialStars, saveWeeklyBest } from './platform/storage';
 import { currentWeekly } from './run/weekly';
 import {
-  HEARTH_TPS, clearHearth, elapsedTicks, eternalThreats, fmtAbsence,
-  loadHearth, packWorld, restoreWorld, saveHearth,
+  HEARTH_TPS, clearHearth, clearResume, elapsedTicks, eternalThreats, fmtAbsence,
+  loadHearth, loadResume, packWorld, restoreWorld, saveHearth, saveResume,
 } from './run/hearth';
 import { ReplayPlayer, ReplayRecorder, decodeDuel, decodeReplay, encodeDuel, meNums, type ReplayData } from './run/replay';
 import { makeRun, type RunConfig } from './run/setup';
@@ -117,10 +120,21 @@ let aftermathNeikosSum = 0;
 let aftermathNeikosN = 0;
 /** Хроника: сколько тиков жизни видела каждая клетка (линза Ⅳ). */
 let heat = new Float32Array(0);
+/** Именованные формы партии (id кластера → биография). */
+const namedForms = new Map<number, NamedForm>();
+/** Заря уже взошла в этой партии? */
+let dawnSeen = false;
+/** Откат последнего жеста: посев или правка Ме. */
+let lastGesture:
+  | { kind: 'sow'; i: number; budget: 'sower' | PieceKind | null }
+  | { kind: 'me'; prev: Me }
+  | null = null;
+const goals = GoalsPanel.needed() ? new GoalsPanel() : null;
 
 const milestones: Milestones = {
   firstFormTick: null,
   mindTick: null,
+  namedForms: [],
   threatTick: 0,
   stormCount: 0,
   tabletsFired: [],
@@ -193,6 +207,54 @@ function measure(): void {
         }
       }
     }
+
+    // Имена: форма, прожившая век, обретает биографию.
+    const present = new Set<number>();
+    for (const c of clusters) {
+      present.add(c.id);
+      const known = namedForms.get(c.id);
+      if (known) {
+        if (c.size > known.peakSize) known.peakSize = c.size;
+      } else if (c.age >= NAME_AGE && c.size >= NAME_SIZE && namedForms.size < 6) {
+        const name = formName(c.id, cfg.seed);
+        namedForms.set(c.id, {
+          id: c.id, name,
+          bornTick: world.tick - c.age, namedTick: world.tick,
+          diedTick: null, peakSize: c.size,
+        });
+        hud.toast(`Форма обрела имя: ${name}.`);
+        sound.event('form');
+      }
+    }
+    for (const f of namedForms.values()) {
+      if (f.diedTick === null && !present.has(f.id)) {
+        f.diedTick = world.tick;
+        hud.toast(`${f.name} больше нет. Летопись запомнит.`);
+      }
+    }
+
+    // Заря: первый гибрид трёх родов.
+    if (!dawnSeen) {
+      for (let i = 0; i < world.cells.length; i++) {
+        if (world.cells[i] === Cell.Seed && world.kind[i] === HYBRID_STRAIN) {
+          dawnSeen = true;
+          hud.toast('Три рода сошлись — взошла Заря, четвёртый род.');
+          sound.event('mind');
+          break;
+        }
+      }
+    }
+  }
+
+  // Гид первой партии.
+  if (goals && running && !player) {
+    const done = goals.update({
+      firstForm: lenses.unlocked2,
+      lens2Used: lenses.current === 2 || lenses.current === 3,
+      mindAwake: lenses.unlocked3,
+      tabletBeforeStorm: tabletEngine.carvedCount > 0 && world.tick < firstThreatTick(me),
+    });
+    if (done) hud.toast(done);
   }
 }
 
@@ -320,6 +382,11 @@ function startRun(
   aftermathNeikosSum = 0;
   aftermathNeikosN = 0;
   phiIntegral = 0;
+  namedForms.clear();
+  milestones.namedForms = [];
+  dawnSeen = false;
+  lastGesture = null;
+  if (goals && !player) goals.show();
   lastStormIndex = -1;
   geneBefore[0] = geneBefore[1] = geneBefore[2] = null;
 
@@ -396,6 +463,27 @@ function startRun(
         ? `В твоей горсти ${cfg.sowBudget} Семян. Расставь их — и пусти время (⏸).`
         : 'Мир сотворён. Начертай Ме — и жди, когда форма устоит.',
   );
+}
+
+function resumeEligible(): boolean {
+  return (
+    running && !hearthMode && !breathMode && !player &&
+    cfg.mode === 'flow' && !cfg.trialId && !cfg.layoutId
+  );
+}
+
+function persistResume(): void {
+  if (!resumeEligible()) return;
+  saveResume({
+    seedText: cfg.seedText,
+    biome: cfg.biome,
+    archetype: cfg.archetype,
+    size: cfg.size,
+    world: packWorld(world),
+    me,
+    tablets: tabletEngine.toJSON(),
+    savedAt: Date.now(),
+  });
 }
 
 function persistHearth(): void {
@@ -478,6 +566,13 @@ function finishRun(): void {
   milestones.finalTick = world.tick;
   milestones.finalPhi = report.phi;
   milestones.tabletsFired = [...tabletEngine.firedLog];
+  milestones.namedForms = [...namedForms.values()]
+    .sort((a, b) => b.peakSize - a.peakSize)
+    .map((f): NamedFormNote => ({
+      name: f.name, namedTick: f.namedTick, diedTick: f.diedTick, peakSize: f.peakSize,
+    }));
+  if (!player) clearResume();
+  goals?.hide();
 
   const endNeikos = aftermathNeikosN > 0 ? aftermathNeikosSum / aftermathNeikosN : report.neikos;
   const ending = decideEnding({
@@ -592,6 +687,7 @@ const hud = new Hud(me, {
     const old = forecaster.latest;
     const lastFrame = old?.frames[old.frames.length - 1];
     if (lastFrame) altGhost = { cells: lastFrame.cells, until: performance.now() + 6000 };
+    lastGesture = { kind: 'me', prev: { ...me } };
     // Поля энергии и угрозы ползунками не трогаются — переносим из текущих Ме.
     me = { ...me, birthMin: next.birthMin, birthMax: next.birthMax,
       surviveMin: next.surviveMin, surviveMax: next.surviveMax,
@@ -635,7 +731,7 @@ const hud = new Hud(me, {
       applyPieceButton();
       return -1; // hud не трогает цвет — applyPieceButton уже всё сделал
     }
-    brushStrain = (brushStrain + 1) % STRAINS;
+    brushStrain = (brushStrain + 1) % BASE_STRAINS;
     return brushStrain;
   },
   onSpeedCycle() {
@@ -700,6 +796,20 @@ function showSetup(): void {
   );
 }
 
+function resumeRun(): void {
+  const save = loadResume();
+  if (!save) return;
+  startRun(save.seedText, save.biome, save.archetype, save.size, 'flow');
+  me = { ...save.me };
+  world = restoreWorld(save);
+  heat = new Float32Array(world.cells.length);
+  tracker.reset();
+  tabletEngine.fromJSON(save.tablets);
+  tabletUI.refresh();
+  measure();
+  hud.toast(`Партия продолжается с ${world.tick} тика.`);
+}
+
 /** Главное меню: все пути игры на виду. */
 function showStart(): void {
   const w = currentWeekly();
@@ -714,6 +824,16 @@ function showStart(): void {
         desc: 'Поток · Сеятель · Испытания · Расклады',
         onClick: showSetup,
       },
+      ...(loadResume()
+        ? [{
+            icon: '▶', label: 'Продолжить партию',
+            desc: `мир ждёт на ${(JSON.parse((loadResume() as { world: string }).world) as { tick: number }).tick} тике`,
+            onClick: () => {
+              screens.hide();
+              resumeRun();
+            },
+          }]
+        : []),
       {
         icon: '🔥', label: save ? 'Очаг (тамагочи) — вернуться к миру' : 'Очаг — режим-тамагочи',
         desc: save
@@ -847,6 +967,7 @@ function plantAt(x: number, y: number): void {
     const i = c.y * GRID_W + c.x;
     if (!setPiece(i, currentPiece)) return;
     layoutPool[currentPiece]--;
+    lastGesture = { kind: 'sow', i, budget: currentPiece };
     const ev: { t: number; k: 'sow'; i: number; s: number; p?: 'spore' | 'wall' } = {
       t: world.tick, k: 'sow', i,
       s: currentPiece.startsWith('s') ? Number(currentPiece.slice(1)) : 0,
@@ -872,6 +993,7 @@ function plantAt(x: number, y: number): void {
     if (sowingLocked || sowBudget <= 0) return;
     const i = c.y * GRID_W + c.x;
     if (!setSeed(i, brushStrain)) return;
+    lastGesture = { kind: 'sow', i, budget: 'sower' };
     recorder.record({ t: world.tick, k: 'sow', i, s: brushStrain });
     sowBudget--;
     hud.setBudget(sowBudget);
@@ -926,6 +1048,35 @@ function applyReplayEvents(): void {
         break;
     }
   }
+}
+
+/** «Рука дрогнула»: откатить последний посев или правку Ме. */
+function undoGesture(): void {
+  if (!lastGesture || player) return;
+  if (lastGesture.kind === 'sow') {
+    const { i, budget } = lastGesture;
+    if (world.cells[i] === Cell.Seed || world.cells[i] === Cell.Spore || world.cells[i] === Cell.Signal) {
+      world.cells[i] = Cell.Empty;
+      world.age[i] = 0;
+      worldDirty++;
+      recorder.popLast('sow');
+      if (budget === 'sower' && sowBudget !== null) {
+        sowBudget++;
+        hud.setBudget(sowBudget);
+      } else if (budget && budget !== 'sower' && layoutPool) {
+        layoutPool[budget]++;
+        hud.setBudgetText(layoutBudgetText() || null);
+      }
+      hud.toast('Семя возвращено в горсть.');
+    }
+  } else {
+    me = lastGesture.prev;
+    recorder.popLast('me');
+    forecaster.invalidate();
+    refreshForecast(true);
+    hud.toast('Закон возвращён, как был.');
+  }
+  lastGesture = null;
 }
 
 function togglePause(): boolean {
@@ -1037,6 +1188,9 @@ window.addEventListener('keydown', (e) => {
       break;
     case 'KeyM':
       sound.toggleMute();
+      break;
+    case 'KeyZ':
+      undoGesture();
       break;
     case 'ArrowUp':
     case 'ArrowDown':
@@ -1212,7 +1366,12 @@ plantBtn.textContent = '⤓ Посадить';
 plantBtn.addEventListener('click', () => {
   if (aim) plantAt(aim.x, aim.y);
 });
-plantWrap.append(nudge('◀', -1, 0), nudge('▲', 0, -1), plantBtn, nudge('▼', 0, 1), nudge('▶', 1, 0));
+const undoBtn = document.createElement('button');
+undoBtn.className = 'nudgebtn';
+undoBtn.textContent = '↶';
+undoBtn.title = 'Вернуть последнее Семя (Z)';
+undoBtn.addEventListener('click', undoGesture);
+plantWrap.append(nudge('◀', -1, 0), nudge('▲', 0, -1), plantBtn, nudge('▼', 0, 1), nudge('▶', 1, 0), undoBtn);
 document.body.append(plantWrap);
 
 function returnToMenu(): void {
@@ -1225,18 +1384,32 @@ function returnToMenu(): void {
     return;
   }
   if (running) {
-    if (!window.confirm('Покинуть мир и вернуться в меню? Партия завершится без летописи.')) return;
-    running = false;
-    breathMode = false;
-    (document.getElementById('mepanel') as HTMLElement).style.display = '';
+    if (resumeEligible()) {
+      // Обычную партию не теряем — сохраняем и выходим.
+      persistResume();
+      running = false;
+      hud.toast('Партия сохранена — продолжишь из меню.');
+    } else if (window.confirm('Покинуть мир и вернуться в меню? Партия завершится без летописи.')) {
+      running = false;
+      breathMode = false;
+      (document.getElementById('mepanel') as HTMLElement).style.display = '';
+    } else {
+      return;
+    }
   }
   showStart();
 }
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') persistHearth();
+  if (document.visibilityState === 'hidden') {
+    persistHearth();
+    persistResume();
+  }
 });
-window.addEventListener('pagehide', () => persistHearth());
+window.addEventListener('pagehide', () => {
+  persistHearth();
+  persistResume();
+});
 
 showStart();
 requestAnimationFrame(frame);

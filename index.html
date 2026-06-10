@@ -135,6 +135,26 @@
       background: var(--panel);
     }
 
+    /* Гид первой партии */
+    #goals {
+      position: fixed;
+      left: calc(10px + env(safe-area-inset-left, 0px));
+      bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: var(--ochre);
+      max-width: 230px;
+      pointer-events: none;
+    }
+    #goals.show { display: flex; }
+    .goalrow.done { color: var(--turquoise); opacity: 0.8; }
+
     /* Главное меню */
     .menulist {
       display: flex;

@@ -8,7 +8,8 @@
  */
 import { SPROUT_ENERGY, STARVATION_LEVEL, nextEnergy } from './energy';
 import {
-  Cell, GRID_H, GRID_W, STRAINS, Terrain, type WorldState, cloneWorld, onGridResize,
+  BASE_STRAINS, Cell, GRID_H, GRID_W, HYBRID_STRAIN, STRAINS, Terrain,
+  type WorldState, cloneWorld, onGridResize,
 } from './grid';
 import { SPRING_INFLUX } from './terrain';
 
@@ -121,8 +122,16 @@ function inheritStrain(src: Uint8Array, kind: Uint8Array, signal: Float32Array):
       strainSignal[s] = (strainSignal[s] as number) + (signal[ni] as number);
     }
   }
+  // Заря: где сошлись все три базовых рода — рождается четвёртый.
+  if (
+    (strainVotes[0] as number) > 0 &&
+    (strainVotes[1] as number) > 0 &&
+    (strainVotes[2] as number) > 0
+  ) {
+    return HYBRID_STRAIN;
+  }
   let best = 0;
-  for (let s = 1; s < STRAINS; s++) {
+  for (let s = 1; s < BASE_STRAINS; s++) {
     const v = strainVotes[s] as number;
     const vb = strainVotes[best] as number;
     if (v > vb || (v === vb && (strainSignal[s] as number) > (strainSignal[best] as number))) {

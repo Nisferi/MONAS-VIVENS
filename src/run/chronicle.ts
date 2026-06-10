@@ -6,9 +6,17 @@ import type { Ending } from './endings';
 import type { RunConfig } from './setup';
 import { ARCHETYPES, BIOMES } from './setup';
 
+export interface NamedFormNote {
+  name: string;
+  namedTick: number;
+  diedTick: number | null;
+  peakSize: number;
+}
+
 export interface Milestones {
   firstFormTick: number | null;
   mindTick: number | null;
+  namedForms: NamedFormNote[];
   threatTick: number;
   stormCount: number;
   tabletsFired: string[];
@@ -38,6 +46,14 @@ export function writeChronicle(m: Milestones, ending: Ending, cfg: RunConfig): s
   lines.push(
     `На ${m.threatTick} тике пришёл первый из ${m.stormCount} Нейкос-штормов — как и было предначертано.`,
   );
+
+  for (const f of m.namedForms.slice(0, 3)) {
+    lines.push(
+      f.diedTick === null
+        ? `Форма ${f.name} обрела имя на ${f.namedTick} тике и дожила до конца (в расцвете — ${f.peakSize} клеток).`
+        : `Форма ${f.name} обрела имя на ${f.namedTick} тике и пала на ${f.diedTick}-м (в расцвете — ${f.peakSize} клеток).`,
+    );
+  }
 
   if (m.tabletsFired.length > 0) {
     lines.push(`Таблички Судеб говорили: ${m.tabletsFired.join('; ')}.`);
