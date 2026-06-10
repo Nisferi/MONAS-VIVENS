@@ -180,6 +180,26 @@
       margin-top: 2px;
     }
     #budgetstat { color: var(--turquoise); font-weight: bold; }
+
+    /* Скраббер времени (линза Разума) */
+    #scrub {
+      position: fixed;
+      bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+      left: 50%;
+      transform: translateX(-50%);
+      display: none;
+      align-items: center;
+      gap: 10px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 6px 14px;
+      font-size: 12px;
+      color: var(--turquoise);
+    }
+    #scrub.show { display: flex; }
+    #scrub input { width: min(40vw, 260px); accent-color: var(--turquoise); }
+    #scrub output { min-width: 3.5em; text-align: right; color: var(--turquoise); }
     @media (max-width: 520px) {
       #quote { font-size: 11px; top: calc(64px + env(safe-area-inset-top, 0px)); }
       #lensbtns { gap: 6px; }

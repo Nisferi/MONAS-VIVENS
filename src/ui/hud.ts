@@ -25,6 +25,8 @@ export interface HudCallbacks {
   onSpeedCycle(): number;
   /** Переключает звук; возвращает новое состояние «выключен». */
   onMuteToggle(): boolean;
+  /** Скраббер времени: доля пути к горизонту (0..1). */
+  onScrub(frac: number): void;
 }
 
 /** Ползункам доступны только числовые законы (массив угроз — не для рук). */
@@ -59,6 +61,8 @@ export class Hud {
   private budgetEl!: HTMLElement;
   private quoteEl!: HTMLElement;
   private quoteText = '';
+  private scrubEl!: HTMLElement;
+  private scrubLabel!: HTMLElement;
   private breakdownEl!: HTMLElement;
   private lensBtns = new Map<LensId, HTMLButtonElement>();
   private toastEl!: HTMLElement;
@@ -246,6 +250,28 @@ export class Hud {
     this.quoteEl = document.createElement('div');
     this.quoteEl.id = 'quote';
     document.body.append(this.quoteEl);
+
+    // Скраббер времени: путь взгляда по прогнозу (виден только в линзе Ⅲ).
+    this.scrubEl = document.createElement('div');
+    this.scrubEl.id = 'scrub';
+    const label = document.createElement('span');
+    label.textContent = 'взор';
+    const range = document.createElement('input');
+    range.type = 'range';
+    range.min = '0';
+    range.max = '100';
+    range.value = '100';
+    range.addEventListener('input', () => this.cb.onScrub(Number(range.value) / 100));
+    this.scrubLabel = document.createElement('output');
+    this.scrubLabel.textContent = '';
+    this.scrubEl.append(label, range, this.scrubLabel);
+    document.body.append(this.scrubEl);
+  }
+
+  /** Показ скраббера и подпись «+T тиков». */
+  setScrub(visible: boolean, atTicks: number | null): void {
+    this.scrubEl.classList.toggle('show', visible);
+    if (atTicks !== null) this.scrubLabel.textContent = `+${atTicks}`;
   }
 
   toast(text: string): void {

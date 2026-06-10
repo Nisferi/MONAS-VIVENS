@@ -41,6 +41,10 @@ export class FieldRenderer {
   private readonly futureCtx: CanvasRenderingContext2D;
   private futureImage: ImageData;
   private hasFuture = false;
+  private readonly altCanvas: HTMLCanvasElement;
+  private readonly altCtx: CanvasRenderingContext2D;
+  private altImage: ImageData;
+  private hasAlt = false;
 
   /** Зум относительно «вписанного» масштаба: 1 = всё поле на экране. */
   private zoom = 1;
@@ -69,6 +73,14 @@ export class FieldRenderer {
     this.futureCtx = futureCtx;
     this.futureImage = futureCtx.createImageData(GRID_W, GRID_H);
 
+    this.altCanvas = document.createElement('canvas');
+    this.altCanvas.width = GRID_W;
+    this.altCanvas.height = GRID_H;
+    const altCtx = this.altCanvas.getContext('2d');
+    if (!altCtx) throw new Error('Canvas 2D недоступен');
+    this.altCtx = altCtx;
+    this.altImage = altCtx.createImageData(GRID_W, GRID_H);
+
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -79,9 +91,13 @@ export class FieldRenderer {
     this.cellCanvas.height = GRID_H;
     this.futureCanvas.width = GRID_W;
     this.futureCanvas.height = GRID_H;
+    this.altCanvas.width = GRID_W;
+    this.altCanvas.height = GRID_H;
     this.image = this.cellCtx.createImageData(GRID_W, GRID_H);
     this.futureImage = this.futureCtx.createImageData(GRID_W, GRID_H);
+    this.altImage = this.altCtx.createImageData(GRID_W, GRID_H);
     this.hasFuture = false;
+    this.hasAlt = false;
     this.resetView();
   }
 
@@ -166,6 +182,16 @@ export class FieldRenderer {
     }
   }
 
+  /** Веер будущих: лиловый призрак старого закона. */
+  setFutureAlt(cells: Uint8Array | null): void {
+    if (cells) {
+      paintFutureGhost(this.altCtx, this.altImage, cells, [0xc4, 0x7a, 0xff]);
+      this.hasAlt = true;
+    } else {
+      this.hasAlt = false;
+    }
+  }
+
   render(state: WorldState, lens: LensId = 1, clusters: Cluster[] = []): void {
     this.paintCells(state);
 
@@ -195,6 +221,7 @@ export class FieldRenderer {
         { originX, originY, scale: s },
         this.cellCanvas,
         this.hasFuture ? this.futureCanvas : null,
+        this.hasAlt ? this.altCanvas : null,
       );
     }
 

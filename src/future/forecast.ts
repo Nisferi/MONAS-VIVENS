@@ -1,19 +1,24 @@
 /**
  * future/forecast — fast-forward копии мира в Web Worker,
  * чтобы расчёт будущего не подвешивал UI на слабых телефонах.
+ * Прогноз — это путь: серия кадров от «+скоро» до горизонта.
  */
 import type { WorldState } from '../core/grid';
 import type { Me } from '../core/rules';
 
-export interface ForecastResult {
-  /** Тик, с которого считался прогноз. */
-  baseTick: number;
-  /** На сколько тиков вперёд. */
-  steps: number;
-  /** Состояние мира на тике baseTick + steps. */
+export interface ForecastFrame {
+  /** На сколько тиков вперёд от точки расчёта. */
+  at: number;
   cells: Uint8Array;
-  age: Uint16Array;
 }
+
+export interface ForecastResult {
+  baseTick: number;
+  frames: ForecastFrame[];
+}
+
+/** Сколько кадров пути просить у воркера. */
+export const FORECAST_FRAMES = 8;
 
 export class Forecaster {
   private readonly worker: Worker;
@@ -37,7 +42,13 @@ export class Forecaster {
     const age = state.age.slice();
     const kind = state.kind.slice();
     this.worker.postMessage(
-      { cells, age, kind, baseTick: state.tick, energy: state.energy, me, steps },
+      {
+        cells, age, kind,
+        baseTick: state.tick,
+        energy: state.energy,
+        me, steps,
+        frames: FORECAST_FRAMES,
+      },
       [cells.buffer, age.buffer, kind.buffer],
     );
     return true;

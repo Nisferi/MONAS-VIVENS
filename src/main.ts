@@ -67,6 +67,10 @@ const tabletEngine = new TabletEngine();
 const sound = new SoundEngine();
 const recorder = new ReplayRecorder();
 let player: ReplayPlayer | null = null;
+/** Скраббер: доля пути взгляда к горизонту (1 = сам горизонт). */
+let scrubFrac = 1;
+/** Веер будущих: призрак старого закона после правки Ме. */
+let altGhost: { cells: Uint8Array; until: number } | null = null;
 let clusters: Cluster[] = [];
 let report: PhiReport = computePhi([], 0);
 let lastForecastBase = -1;
@@ -317,6 +321,10 @@ const screens = new Screens();
 const hud = new Hud(me, {
   onMeChange(next) {
     if (player) return; // в чужом мире законы чужие
+    // Веер будущих: путь старого закона остаётся лиловой тенью на 6 секунд.
+    const old = forecaster.latest;
+    const lastFrame = old?.frames[old.frames.length - 1];
+    if (lastFrame) altGhost = { cells: lastFrame.cells, until: performance.now() + 6000 };
     // Поля энергии и угрозы ползунками не трогаются — переносим из текущих Ме.
     me = { ...me, birthMin: next.birthMin, birthMax: next.birthMax,
       surviveMin: next.surviveMin, surviveMax: next.surviveMax, ashLifetime: next.ashLifetime };
@@ -352,6 +360,9 @@ const hud = new Hud(me, {
     return SPEEDS[speedIdx] as number;
   },
   onMuteToggle: () => sound.toggleMute(),
+  onScrub(frac) {
+    scrubFrac = frac;
+  },
 });
 
 const tabletUI = new TabletUI(document.getElementById('mepanel') as HTMLElement, tabletEngine, {
@@ -598,8 +609,16 @@ function frame(now: number): void {
     }
   }
 
+  // Призрак будущего — только в линзе Разума; скраббер выбирает кадр пути.
   const f = forecaster.latest;
-  renderer.setFuture(lenses.current === 3 && f ? f.cells : null);
+  const snap =
+    f && f.frames.length > 0
+      ? f.frames[Math.min(f.frames.length - 1, Math.round(scrubFrac * (f.frames.length - 1)))]
+      : undefined;
+  renderer.setFuture(lenses.current === 3 && snap ? snap.cells : null);
+  if (altGhost && performance.now() > altGhost.until) altGhost = null;
+  renderer.setFutureAlt(lenses.current === 3 && altGhost ? altGhost.cells : null);
+  hud.setScrub(lenses.current === 3 && !!snap, snap ? snap.at : null);
 
   renderer.render(world, lenses.current, clusters);
   hud.update(world, report, lenses.unlocked3 ? horizonNow() : null, STAGE_NAMES[stage]);
