@@ -42,6 +42,17 @@ export class FieldRenderer {
 
   /** Версия вида: растёт при любом изменении того, что видно. Для dirty-рендера. */
   version = 0;
+  /** Нижняя занятая область (физ. пиксели): панель Скрижали, скраббер. */
+  private bottomInset = 0;
+
+  setBottomInset(cssPx: number): void {
+    const dpr = window.devicePixelRatio || 1;
+    const px = Math.max(0, Math.round(cssPx * dpr));
+    if (px !== this.bottomInset) {
+      this.bottomInset = px;
+      this.version++;
+    }
+  }
 
   /** Зум относительно «вписанного» масштаба: 1 = всё поле на экране. */
   private zoom = 1;
@@ -106,9 +117,9 @@ export class FieldRenderer {
     this.canvas.height = Math.round(window.innerHeight * dpr);
   }
 
-  /** Масштаб «вписать поле в экран», в физических пикселях на клетку. */
+  /** Масштаб «вписать поле в видимую область», в физических пикселях на клетку. */
   private fitScale(): number {
-    return Math.min(this.canvas.width, this.canvas.height) / GRID_W;
+    return Math.min(this.canvas.width, this.canvas.height - this.bottomInset) / GRID_W;
   }
 
   private scale(): number {
@@ -160,7 +171,7 @@ export class FieldRenderer {
     const s = this.scale();
     return {
       x: this.centerX + (px - this.canvas.width / 2) / s,
-      y: this.centerY + (py - this.canvas.height / 2) / s,
+      y: this.centerY + (py - (this.canvas.height - this.bottomInset) / 2) / s,
     };
   }
 
@@ -214,7 +225,7 @@ export class FieldRenderer {
     const { ctx, canvas } = this;
     const s = this.scale();
     const originX = canvas.width / 2 - this.centerX * s;
-    const originY = canvas.height / 2 - this.centerY * s;
+    const originY = (canvas.height - this.bottomInset) / 2 - this.centerY * s;
 
     ctx.fillStyle = activeTheme.canvasBg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);

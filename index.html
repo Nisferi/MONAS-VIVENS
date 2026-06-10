@@ -108,20 +108,32 @@
       left: calc(10px + env(safe-area-inset-left, 0px));
       z-index: 5;
     }
-    #plantbtn {
+    #plantwrap {
       position: fixed;
-      bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+      bottom: calc(64px + env(safe-area-inset-bottom, 0px));
       left: 50%;
       transform: translateX(-50%);
       display: none;
+      align-items: center;
+      gap: 8px;
+      z-index: 6;
+    }
+    #plantwrap.show { display: flex; }
+    #plantbtn {
       border-radius: 12px;
       border-color: var(--gold);
       color: var(--gold);
-      font-size: 17px;
-      padding: 14px 30px;
+      font-size: 16px;
+      padding: 13px 22px;
       box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5);
     }
-    #plantbtn.show { display: block; }
+    .nudgebtn {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      font-size: 17px;
+      background: var(--panel);
+    }
 
     /* Главное меню */
     .menulist {

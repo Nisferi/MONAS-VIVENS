@@ -74,10 +74,14 @@ export class Hud {
   private sparkCanvas!: HTMLCanvasElement;
   private phiHistory: number[] = [];
   private lastTick = 0;
+  private lastStatsBottom = 0;
+
+  private statsEl!: HTMLElement;
 
   constructor(initialMe: Me, private readonly cb: HudCallbacks) {
     this.me = { ...initialMe };
-    this.buildStats(document.getElementById('stats') as HTMLElement);
+    this.statsEl = document.getElementById('stats') as HTMLElement;
+    this.buildStats(this.statsEl);
     this.buildSideButtons(document.getElementById('sidebtns') as HTMLElement);
     this.buildMePanel(document.getElementById('mepanel') as HTMLElement);
     this.buildToast();
@@ -267,10 +271,17 @@ export class Hud {
   }
 
   private buildMePanel(panel: HTMLElement): void {
+    panel.classList.add('hidden'); // по умолчанию поле чистое
     const handle = document.createElement('button');
     handle.id = 'mehandle';
-    handle.textContent = '— Скрижаль —';
-    handle.addEventListener('click', () => panel.classList.toggle('hidden'));
+    const syncHandle = () => {
+      handle.textContent = panel.classList.contains('hidden') ? '▲ Скрижаль ▲' : '▼ Скрыть ▼';
+    };
+    handle.addEventListener('click', () => {
+      panel.classList.toggle('hidden');
+      syncHandle();
+    });
+    syncHandle();
     panel.append(handle);
 
     // Вкладки нижней панели: законы, судьба, память.
@@ -409,6 +420,13 @@ export class Hud {
         if (this.phiHistory.length > 100) this.phiHistory.shift();
         this.drawSpark();
       }
+    }
+    // Оверлеи (цитата, тост) держим ниже капсулы статов — без наложений.
+    const statsBottom = Math.round(this.statsEl.getBoundingClientRect().bottom);
+    if (statsBottom !== this.lastStatsBottom) {
+      this.lastStatsBottom = statsBottom;
+      this.quoteEl.style.top = `${statsBottom + 8}px`;
+      this.toastEl.style.top = `${statsBottom + 8}px`;
     }
     this.phiEl.textContent = `Φ ${report.phi.toFixed(1)}`;
     this.energyEl.textContent = `⚡ ${Math.round(state.energy)}`;

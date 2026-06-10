@@ -715,18 +715,18 @@ function showStart(): void {
         onClick: showSetup,
       },
       {
-        icon: '🔥', label: save ? 'Очаг — вернуться к миру' : 'Очаг — вечный мир',
+        icon: '🔥', label: save ? 'Очаг (тамагочи) — вернуться к миру' : 'Очаг — режим-тамагочи',
         desc: save
           ? `тик ${(JSON.parse(save.world) as { tick: number }).tick}, один ${fmtAbsence(elapsedTicks(save))}`
-          : 'тамагочи: живёт в реальном времени, даже когда вкладка закрыта',
+          : 'вечный мир: живёт в реальном времени, навещай и направляй',
         onClick: () => {
           screens.hide();
           startHearth();
         },
       },
       {
-        icon: '☯', label: 'Дыхание',
-        desc: '10 минут созерцания: мир дышит с тобой, руки убраны',
+        icon: '☯', label: 'Дыхание — самопознание',
+        desc: '10 минут созерцания: мир дышит с тобой, в конце — строка о себе',
         onClick: () => {
           screens.hide();
           startBreath();
@@ -880,16 +880,20 @@ function plantAt(x: number, y: number): void {
   }
 }
 
-function sowAt(cssX: number, cssY: number): void {
+function sowAt(cssX: number, cssY: number, pointerType = 'mouse'): void {
   if (player || breathMode) return; // в чужом мире и в созерцании руки убраны
-  const c = renderer.cellAt(cssX, cssY);
-  if (!c) return;
 
   // Фаза посева: палец только целится, сажает кнопка «Посадить».
+  // На таче прицел живёт НАД пальцем — палец не закрывает точку.
   if (sowingPhase()) {
-    aim = c;
+    const offset = pointerType === 'touch' ? 64 : 0;
+    const t = renderer.cellAt(cssX, cssY - offset) ?? renderer.cellAt(cssX, cssY);
+    if (t) aim = t;
     return;
   }
+
+  const c = renderer.cellAt(cssX, cssY);
+  if (!c) return;
 
   const spots = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const;
   for (const [dx, dy] of spots) {
@@ -965,7 +969,7 @@ canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 2) pinchDist = pinchDistance();
-  if (brush && pointers.size === 1) sowAt(e.clientX, e.clientY);
+  if (brush && pointers.size === 1) sowAt(e.clientX, e.clientY, e.pointerType);
   else canvas.classList.add('dragging');
 });
 
@@ -974,7 +978,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (!prev) return;
 
   if (pointers.size === 1) {
-    if (brush) sowAt(e.clientX, e.clientY);
+    if (brush) sowAt(e.clientX, e.clientY, e.pointerType);
     else renderer.panBy(e.clientX - prev.x, e.clientY - prev.y);
   }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1059,6 +1063,9 @@ window.addEventListener('keydown', (e) => {
 });
 
 // ---- Цикл ----
+
+const mepanelEl = document.getElementById('mepanel') as HTMLElement;
+let insetFrame = 0;
 
 let lastTime = performance.now();
 let accumulator = 0;
@@ -1159,6 +1166,10 @@ function frame(now: number): void {
   renderer.setFutureAlt(lenses.current === 3 && altGhost ? altGhost.cells : null);
   hud.setScrub(lenses.current === 3 && !!snap, snap ? snap.at : null);
 
+  if (++insetFrame % 15 === 0) {
+    const top = mepanelEl.getBoundingClientRect().top;
+    renderer.setBottomInset(Math.min(window.innerHeight * 0.6, Math.max(0, window.innerHeight - top)));
+  }
   const aiming = sowingPhase() && aim ? aim : null;
   const renderKey = `${world.tick}|${lenses.current}|${renderer.version}|${worldDirty}|${scrubFrac}|${Math.round(frac * 50)}|${altGhost ? 1 : 0}|${aiming ? `${aiming.x},${aiming.y}` : ''}`;
   if (!paused || aiming || renderKey !== lastRenderKey) {
@@ -1168,7 +1179,7 @@ function frame(now: number): void {
     );
     lastRenderKey = renderKey;
   }
-  plantBtn.classList.toggle('show', !!aiming);
+  plantWrap.classList.toggle('show', !!aiming);
   hud.update(world, report, lenses.unlocked3 ? horizonNow() : null, STAGE_NAMES[stage]);
   requestAnimationFrame(frame);
 }
@@ -1183,13 +1194,26 @@ menuBtn.title = 'В меню';
 menuBtn.addEventListener('click', returnToMenu);
 document.body.append(menuBtn);
 
+const plantWrap = document.createElement('div');
+plantWrap.id = 'plantwrap';
+const nudge = (label: string, dx: number, dy: number) => {
+  const b = document.createElement('button');
+  b.className = 'nudgebtn';
+  b.textContent = label;
+  b.addEventListener('click', () => {
+    const cur = aim ?? { x: GRID_W >> 1, y: GRID_H >> 1 };
+    aim = { x: (cur.x + dx + GRID_W) % GRID_W, y: (cur.y + dy + GRID_H) % GRID_H };
+  });
+  return b;
+};
 const plantBtn = document.createElement('button');
 plantBtn.id = 'plantbtn';
 plantBtn.textContent = '⤓ Посадить';
 plantBtn.addEventListener('click', () => {
   if (aim) plantAt(aim.x, aim.y);
 });
-document.body.append(plantBtn);
+plantWrap.append(nudge('◀', -1, 0), nudge('▲', 0, -1), plantBtn, nudge('▼', 0, 1), nudge('▶', 1, 0));
+document.body.append(plantWrap);
 
 function returnToMenu(): void {
   if (running && hearthMode) {
