@@ -32,6 +32,28 @@ export function playEndingScene(ending: EndingId, done: () => void): void {
     ctx.fillRect(0, 0, cv.width, cv.height);
 
     switch (ending) {
+      case 'tyrant': {
+        // Безупречный часовой механизм: вращающиеся шестерни, мёртвый блеск.
+        ctx.strokeStyle = `rgba(180, 190, 210, ${0.3 + 0.5 * t})`;
+        ctx.lineWidth = 2;
+        for (let g = 0; g < 3; g++) {
+          const gx = cx + (g - 1) * R * 0.7;
+          const teeth = 12;
+          const rr = R * 0.3;
+          const rot = (t * Math.PI * (g % 2 ? -1 : 1)) + g;
+          for (let k = 0; k < teeth; k++) {
+            const a = rot + (k / teeth) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.moveTo(gx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+            ctx.lineTo(gx + Math.cos(a) * rr * 1.2, cy + Math.sin(a) * rr * 1.2);
+            ctx.stroke();
+          }
+          ctx.beginPath();
+          ctx.arc(gx, cy, rr, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        break;
+      }
       case 'sphairos': {
         // Идеальная сфера стягивается — и замирает.
         const r = R * (1.2 - 0.7 * t);

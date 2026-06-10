@@ -22,6 +22,7 @@ export interface ScoreInput {
 const ENDING_BONUS: Record<string, number> = {
   absolute: 50,
   mycelium: 30,
+  tyrant: 10,
   sphairos: 5,
   prophet: 5,
   swamp: 0,

@@ -171,6 +171,9 @@ function measure(): void {
     aftermathNeikosN++;
   }
 
+  // Эволюция (Ярус 3): после каждого шторма — отчёт о дрейфе осторожности родов.
+  reportGeneDrift();
+
   // Таблички: спящие правила проверяются каждый тик.
   for (const msg of tabletEngine.update(world, clusters, report, me)) {
     hud.toast(msg);
@@ -189,6 +192,53 @@ function measure(): void {
           sound.event('form');
         }
       }
+    }
+  }
+}
+
+/** Средняя осторожность каждого рода до недавнего шторма — для дрейфа. */
+const geneBefore: (number | null)[] = [null, null, null];
+let lastStormIndex = -1;
+
+function reportGeneDrift(): void {
+  // Индекс ближайшего прошедшего шторма.
+  let idx = -1;
+  for (let s = 0; s < me.threats.length; s++) {
+    if (world.tick >= (me.threats[s] as { tick: number }).tick) idx = s;
+  }
+  // На входе в шторм запоминаем осторожность; после — сравниваем.
+  const sum = [0, 0, 0];
+  const cnt = [0, 0, 0];
+  for (let i = 0; i < world.cells.length; i++) {
+    if (world.cells[i] === Cell.Seed || world.cells[i] === Cell.Spore) {
+      const k = world.kind[i] as number;
+      sum[k] = (sum[k] as number) + (world.gene[i] as number);
+      cnt[k] = (cnt[k] as number) + 1;
+    }
+  }
+  const STRAIN = ['Огня', 'Нефрита', 'Аметиста'];
+  if (idx !== lastStormIndex && idx >= 0) {
+    // Шторм пройден: показать, кто поумнел.
+    for (let k = 0; k < 3; k++) {
+      const before = geneBefore[k] ?? null;
+      const after = (cnt[k] as number) > 0 ? (sum[k] as number) / (cnt[k] as number) : null;
+      if (before != null && after != null && (cnt[k] as number) >= 8) {
+        const d = Math.round(after - before);
+        if (Math.abs(d) >= 6) {
+          hud.toast(
+            `Род ${STRAIN[k]} ${d > 0 ? 'поумнел' : 'осмелел'}: осторожность ${Math.round(before)}→${Math.round(after)}.`,
+          );
+        }
+      }
+    }
+    lastStormIndex = idx;
+    for (let k = 0; k < 3; k++) geneBefore[k] = null;
+  }
+  // Перед следующим штормом копим базовую осторожность.
+  const nextStorm = me.threats[idx + 1] as { tick: number } | undefined;
+  if (nextStorm && nextStorm.tick - world.tick <= 30 && geneBefore[0] === null) {
+    for (let k = 0; k < 3; k++) {
+      geneBefore[k] = (cnt[k] as number) > 0 ? (sum[k] as number) / (cnt[k] as number) : null;
     }
   }
 }
@@ -270,6 +320,8 @@ function startRun(
   aftermathNeikosSum = 0;
   aftermathNeikosN = 0;
   phiIntegral = 0;
+  lastStormIndex = -1;
+  geneBefore[0] = geneBefore[1] = geneBefore[2] = null;
 
   // Сеятель: время стоит, в горсти — Семена, кисть уже в руке.
   if (cfg.mode === 'sower') {
@@ -436,6 +488,7 @@ function finishRun(): void {
     sawFuture: milestones.mindTick !== null && milestones.mindTick < firstThreatTick(me),
     tabletsCarved: tabletEngine.carvedCount,
     tabletsFired: tabletEngine.firedCount,
+    will: me.will,
   });
 
   const score = computeScore({
@@ -541,7 +594,8 @@ const hud = new Hud(me, {
     if (lastFrame) altGhost = { cells: lastFrame.cells, until: performance.now() + 6000 };
     // Поля энергии и угрозы ползунками не трогаются — переносим из текущих Ме.
     me = { ...me, birthMin: next.birthMin, birthMax: next.birthMax,
-      surviveMin: next.surviveMin, surviveMax: next.surviveMax, ashLifetime: next.ashLifetime };
+      surviveMin: next.surviveMin, surviveMax: next.surviveMax,
+      ashLifetime: next.ashLifetime, will: next.will };
     meEdits++;
     recorder.record({ t: world.tick, k: 'me', me: meNums(me) });
     forecaster.invalidate();

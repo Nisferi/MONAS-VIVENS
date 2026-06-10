@@ -13,9 +13,11 @@ export interface EndingInput {
   sawFuture: boolean;
   tabletsCarved: number;
   tabletsFired: number;
+  /** Воля, дарованная формам (0..10): автономия жизни. */
+  will: number;
 }
 
-export type EndingId = 'sphairos' | 'prophet' | 'swamp' | 'mycelium' | 'absolute';
+export type EndingId = 'sphairos' | 'prophet' | 'swamp' | 'mycelium' | 'absolute' | 'tyrant';
 
 export interface Ending {
   id: EndingId;
@@ -49,6 +51,11 @@ const ENDINGS: Record<EndingId, Ending> = {
     title: 'Абсолют Через Различие',
     text: 'Множество стало единым, оставшись многим. Вражда жива — и потому живо различие; различие живо — и потому Целое видит себя.',
   },
+  tyrant: {
+    id: 'tyrant',
+    title: 'Тиран Будущего',
+    text: 'Ты задушил волю — и мир стал безупречным механизмом. Он живёт, он считает, он не ошибается. Но в нём некому ошибиться — а значит, некому и быть. Идеальные часы не знают, что идут.',
+  },
 };
 
 export function decideEnding(i: EndingInput): Ending {
@@ -56,10 +63,12 @@ export function decideEnding(i: EndingInput): Ending {
   if (!i.survived && i.sawFuture && i.tabletsCarved === 0) return ENDINGS.prophet;
   // Любая иная гибель — мир так и не вышел из болота.
   if (!i.survived) return ENDINGS.swamp;
+  // Тиран Будущего: высокий мир, у которого отняли волю, — мёртвый часовой механизм.
+  if (i.phi >= 30 && i.will <= 1) return ENDINGS.tyrant;
   // Сфайрос: мир жив и высок, но Вражда умерла — застывшее единство.
   if (i.phi >= 25 && i.neikos < 0.03) return ENDINGS.sphairos;
-  // Высшая: целое живо, Φ высока, Нейкос в живом диапазоне.
-  if (i.phi >= 30 && i.neikos >= 0.03 && i.neikos <= 0.75) return ENDINGS.absolute;
+  // Высшая: целое живо, Φ высока, Нейкос в живом диапазоне, воля дарована.
+  if (i.phi >= 30 && i.neikos >= 0.03 && i.neikos <= 0.75 && i.will >= 3) return ENDINGS.absolute;
   // Кризис пережит руками прошлого.
   if (i.tabletsFired > 0 && i.phi >= 12) return ENDINGS.mycelium;
   return ENDINGS.swamp;

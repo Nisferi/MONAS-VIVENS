@@ -61,6 +61,11 @@ export interface WorldState {
   age: Uint16Array;
   /** Род клетки (0..STRAINS-1); наследуется от большинства родителей. */
   kind: Uint8Array;
+  /**
+   * Геном клетки: осторожность 0..255 (Ярус 3 разума). Наследуется от
+   * родителей с детерминированной мутацией; штормы отбирают осторожных.
+   */
+  gene: Uint8Array;
   /** Рельеф (Terrain): вечен, не меняется тиками — клонируется ссылкой. */
   terrain: Uint8Array;
   /** Сигнальное поле — «грибница»: химия стресса/присутствия (Ярус 1 разума). */
@@ -76,13 +81,18 @@ export function createWorld(
   terrain?: Uint8Array,
 ): WorldState {
   const rng = mulberry32(seed);
+  // Геному — отдельный поток: размещение клеток и родов не сдвигается,
+  // прежняя генерация мира сохранена бит-в-бит.
+  const grng = mulberry32(seed ^ 0x9e3779b9);
   const cells = new Uint8Array(GRID_SIZE);
   const kind = new Uint8Array(GRID_SIZE);
+  const gene = new Uint8Array(GRID_SIZE);
   const land = terrain ?? new Uint8Array(GRID_SIZE);
   for (let i = 0; i < GRID_SIZE; i++) {
     if (land[i] !== Terrain.Crystal && rng() < density) {
       cells[i] = Cell.Seed;
       kind[i] = Math.floor(rng() * STRAINS);
+      gene[i] = Math.floor(grng() * 256); // первое поколение — случайный разброс осторожности
     }
   }
   return {
@@ -90,6 +100,7 @@ export function createWorld(
     cells,
     age: new Uint16Array(GRID_SIZE),
     kind,
+    gene,
     terrain: land,
     signal: new Float32Array(GRID_SIZE),
     energy,
@@ -102,6 +113,7 @@ export function cloneWorld(state: WorldState): WorldState {
     cells: state.cells.slice(),
     age: state.age.slice(),
     kind: state.kind.slice(),
+    gene: state.gene.slice(),
     terrain: state.terrain, // рельеф вечен — общая ссылка
     signal: state.signal.slice(),
     energy: state.energy,
@@ -119,6 +131,7 @@ export function serializeWorld(state: WorldState): string {
     cells: Array.from(state.cells),
     age: Array.from(state.age),
     kind: Array.from(state.kind),
+    gene: Array.from(state.gene),
     terrain: Array.from(state.terrain),
     energy: state.energy,
   });
@@ -130,6 +143,7 @@ export function deserializeWorld(json: string): WorldState {
     cells: number[];
     age: number[];
     kind?: number[];
+    gene?: number[];
     terrain?: number[];
     energy?: number;
   };
@@ -138,6 +152,7 @@ export function deserializeWorld(json: string): WorldState {
     cells: Uint8Array.from(raw.cells),
     age: Uint16Array.from(raw.age),
     kind: raw.kind ? Uint8Array.from(raw.kind) : new Uint8Array(raw.cells.length),
+    gene: raw.gene ? Uint8Array.from(raw.gene) : new Uint8Array(raw.cells.length),
     terrain: raw.terrain ? Uint8Array.from(raw.terrain) : new Uint8Array(raw.cells.length),
     // Сигнальное поле не сохраняем — оно отрастает заново за десяток тиков.
     signal: new Float32Array(raw.cells.length),

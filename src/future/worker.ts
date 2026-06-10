@@ -11,6 +11,7 @@ interface ForecastRequest {
   cells: Uint8Array;
   age: Uint16Array;
   kind: Uint8Array;
+  gene: Uint8Array;
   terrain: Uint8Array;
   signal: Float32Array;
   baseTick: number;
@@ -22,10 +23,10 @@ interface ForecastRequest {
 }
 
 self.onmessage = (e: MessageEvent<ForecastRequest>) => {
-  const { cells, age, kind, terrain, signal, baseTick, energy, me, steps, frames } = e.data;
+  const { cells, age, kind, gene, terrain, signal, baseTick, energy, me, steps, frames } = e.data;
   // Размер поля выводим из данных — у воркера своя копия модуля grid.
   setGridSize(Math.round(Math.sqrt(cells.length)));
-  let state: WorldState = { tick: baseTick, cells, age, kind, terrain, signal, energy };
+  let state: WorldState = { tick: baseTick, cells, age, kind, gene, terrain, signal, energy };
 
   const out: { at: number; cells: Uint8Array }[] = [];
   const transfers: ArrayBuffer[] = [];

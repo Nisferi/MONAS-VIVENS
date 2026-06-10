@@ -45,6 +45,7 @@ const SLIDERS: SliderSpec[] = [
   { key: 'surviveMin', label: 'Выживание от', ...ME_LIMITS.neighbors },
   { key: 'surviveMax', label: 'Выживание до', ...ME_LIMITS.neighbors },
   { key: 'ashLifetime', label: 'Жизнь Праха', ...ME_LIMITS.ashLifetime },
+  { key: 'will', label: 'Воля форм', ...ME_LIMITS.will },
 ];
 
 export class Hud {

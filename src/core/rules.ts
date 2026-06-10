@@ -31,6 +31,11 @@ export interface Me {
   /** Энергия: приток за тик и расход на 100 живых Семян за тик. */
   energyInflux: number;
   energyDrainPer100: number;
+  /**
+   * Воля 0..10 (Ярус 4): сколько автономии даровано формам.
+   * 0 — мир-механизм (кворум молчит); 10 — формы видят дальше и решают сами.
+   */
+  will: number;
   /** Детерминированная судьба: серия Нейкос-штормов (из seed). */
   threats: ThreatWindow[];
 }
@@ -44,12 +49,14 @@ export const DEFAULT_ME: Me = {
   ashLifetime: 6,
   energyInflux: 0.6,
   energyDrainPer100: 0.06,
+  will: 5,
   threats: [],
 };
 
 export const ME_LIMITS = {
   neighbors: { min: 0, max: 8 },
   ashLifetime: { min: 0, max: 30 },
+  will: { min: 0, max: 10 },
 } as const;
 
 /*
@@ -125,6 +132,37 @@ function inheritStrain(src: Uint8Array, kind: Uint8Array, signal: Float32Array):
   return best;
 }
 
+/**
+ * Геном новорождённого (Ярус 3): осторожность берётся от родителя на
+ * сильнейшем сигнале (доминирующая линия), а не усредняется — иначе всё
+ * сползало бы к середине и отбор был бы не виден. Плюс детерминированная
+ * мутация ± из hash(позиция, тик): без seed и Math.random, реплеи совпадают.
+ */
+function inheritGene(
+  src: Uint8Array,
+  gene: Uint8Array,
+  signal: Float32Array,
+  i: number,
+  tickNo: number,
+): number {
+  let best = 128;
+  let bestSig = -1;
+  for (let k = 0; k < 8; k++) {
+    const ni = birthNeigh[k] as number;
+    if (src[ni] === Cell.Seed) {
+      const sg = signal[ni] as number;
+      if (sg > bestSig) {
+        bestSig = sg;
+        best = gene[ni] as number;
+      }
+    }
+  }
+  const h = (Math.imul(i ^ 0x9e3779b1, 2654435761) ^ Math.imul(tickNo + 1, 40503)) >>> 0;
+  const mut = (h % 11) - 5; // ±5 на поколение
+  const g = best + mut;
+  return g < 0 ? 0 : g > 255 ? 255 : g;
+}
+
 /** Один шаг мира. Не мутирует вход. */
 export function tick(state: WorldState, me: Me): WorldState {
   const next = cloneWorld(state);
@@ -134,17 +172,24 @@ export function tick(state: WorldState, me: Me): WorldState {
 
   const terrain = state.terrain;
   const sig = state.signal;
+  const srcGene = state.gene;
   // Голод: на пустой энергии выживание ужесточается — поле само прореживается.
   const starving = state.energy <= STARVATION_LEVEL;
   // Сытость: Споры решаются прорасти.
   const sprouting = state.energy >= SPROUT_ENERGY;
   const surviveMax = starving ? me.surviveMax - 1 : me.surviveMax;
+  // Воля (Ярус 4): автономия форм. Ноль — кворум молчит, мир-механизм.
+  // Выше воля — дальше предвидение шторма (формы «видят» раньше).
+  const will = me.will ?? 5;
+  const lookahead = Math.round(QUORUM_LOOKAHEAD * (0.4 + will / 10));
   // Кворум (Ярус 2): шторм на горизонте — зрелые формы в стрессе уйдут в спячку.
   let stormNear = false;
-  for (const t of me.threats) {
-    if (state.tick < t.tick && t.tick - state.tick <= QUORUM_LOOKAHEAD) {
-      stormNear = true;
-      break;
+  if (will > 0) {
+    for (const t of me.threats) {
+      if (state.tick < t.tick && t.tick - state.tick <= lookahead) {
+        stormNear = true;
+        break;
+      }
     }
   }
   if (emitBuf.length !== sig.length) emitBuf = new Float32Array(sig.length);
@@ -190,8 +235,13 @@ export function tick(state: WorldState, me: Me): WorldState {
         emitBuf[i] = (emitBuf[i] as number) + (onEdge ? EMIT_STRESS : EMIT_PRESENCE);
         const age = srcAge[i] ?? 0;
         if (n >= me.surviveMin && n <= surviveMax) {
-          // Кворум: зрелая форма, чующая шторм сквозь общий стресс, прячется в Спору.
-          if (stormNear && age >= QUORUM_AGE && (sig[i] as number) >= QUORUM_STRESS) {
+          // Кворум: зрелая форма, чующая шторм, прячется в Спору. Геном решает,
+          // насколько рано: осторожный спит легко, смелый почти никогда —
+          // и потому гибнет в шторм. Так отбор поднимает осторожность.
+          const caution = (srcGene[i] as number) / 255;
+          const effStress = QUORUM_STRESS * (0.4 + (1 - caution) * 2.4); // 0.4×..2.8× базы
+          if (stormNear && age >= QUORUM_AGE && (sig[i] as number) >= effStress) {
+            // Спячка хранит геном (клон уже скопировал gene[i]).
             next.cells[i] = Cell.Spore;
             next.age[i] = 0;
           } else {
@@ -219,6 +269,7 @@ export function tick(state: WorldState, me: Me): WorldState {
         birthNeigh[0] = n0; birthNeigh[1] = n1; birthNeigh[2] = n2; birthNeigh[3] = n3;
         birthNeigh[4] = n4; birthNeigh[5] = n5; birthNeigh[6] = n6; birthNeigh[7] = n7;
         next.kind[i] = inheritStrain(src, srcKind, sig);
+        next.gene[i] = inheritGene(src, srcGene, sig, i, state.tick);
       } else if (cell === Cell.Ash) {
         const a = (srcAge[i] ?? 0) + 1;
         if (a >= me.ashLifetime) {

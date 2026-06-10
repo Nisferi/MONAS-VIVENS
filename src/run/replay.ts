@@ -15,6 +15,7 @@ export interface MeNums {
   surviveMin: number;
   surviveMax: number;
   ashLifetime: number;
+  will: number;
 }
 
 export type ReplayEvent =
@@ -43,6 +44,7 @@ export function meNums(me: Me): MeNums {
     surviveMin: me.surviveMin,
     surviveMax: me.surviveMax,
     ashLifetime: me.ashLifetime,
+    will: me.will,
   };
 }
 
