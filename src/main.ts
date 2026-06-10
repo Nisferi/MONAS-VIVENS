@@ -23,7 +23,7 @@ import { computeScore } from './run/score';
 import { detectKnownForms, PATTERNS } from './phi/patterns';
 import { discoverForm, loadLayoutBest, loadWeeklyBest, saveLayoutBest, saveTrialStars, saveWeeklyBest } from './platform/storage';
 import { currentWeekly } from './run/weekly';
-import { ReplayPlayer, ReplayRecorder, decodeReplay, meNums, type ReplayData } from './run/replay';
+import { ReplayPlayer, ReplayRecorder, decodeDuel, decodeReplay, encodeDuel, meNums, type ReplayData } from './run/replay';
 import { makeRun, type RunConfig } from './run/setup';
 import { trialById, trialStars } from './run/trials';
 import {
@@ -88,6 +88,8 @@ const tabletEngine = new TabletEngine();
 const sound = new SoundEngine();
 const recorder = new ReplayRecorder();
 let player: ReplayPlayer | null = null;
+/** Принятый вызов: счёт соперника и его реплей-доказательство. */
+let pendingDuel: { score: number; data: ReplayData } | null = null;
 /** Скраббер: доля пути взгляда к горизонту (1 = сам горизонт). */
 let scrubFrac = 1;
 /** Веер будущих: призрак старого закона после правки Ме. */
@@ -197,6 +199,7 @@ function startRun(
   replay: ReplayData | null = null,
   trialId: string | null = null,
   layoutPick: { id: string; stake: Stake } | null = null,
+  echoOverride: number[] | null = null,
 ): void {
   cfg = makeRun(seedText, biome, archetype, size, mode);
   // Испытание: фиксированный паззл Сеятеля поверх обычного конфига.
@@ -271,7 +274,7 @@ function startRun(
 
   // Эхо мира: новый мир восходит на прахе прежнего (если размеры совпали).
   // Реплей несёт своё эхо — иначе чужая история не совпадёт с нашей.
-  const echo = player ? player.data.echo : (loadEcho(cfg.size) ?? []);
+  const echo = player ? player.data.echo : (echoOverride ?? loadEcho(cfg.size) ?? []);
   let laid = 0;
   for (const i of echo) {
     if (i >= 0 && i < world.cells.length && world.cells[i] === Cell.Empty) {
@@ -420,6 +423,11 @@ function finishRun(): void {
             phi: report.phi,
           }),
         onCopyReplay: () => (player ? null : recorder.encode()),
+        onCopyDuel: () => {
+          if (player) return null;
+          const rep = recorder.encode();
+          return rep ? encodeDuel(score, rep) : null;
+        },
       },
     ),
   );
@@ -523,8 +531,19 @@ function showStart(): void {
         choice.layoutId ? { id: choice.layoutId, stake: choice.stake } : null,
       ),
     (code) => {
+      // Вызов на дуэль: играешь тот же мир сам, реплей соперника — доказательство.
+      const duel = decodeDuel(code);
+      if (duel) {
+        pendingDuel = duel;
+        const c = duel.data.cfg;
+        // Эхо соперника — из его реплея: миры дуэлянтов идентичны.
+        startRun(c.seedText, c.biome, c.archetype, c.size, c.mode, null, null, null, duel.data.echo);
+        hud.toast(`Дуэль принята! Счёт соперника: ${duel.score}. Тот же мир — твой ход.`);
+        return true;
+      }
       const data = decodeReplay(code);
       if (!data) return false;
+      pendingDuel = null;
       startRun(data.cfg.seedText, data.cfg.biome, data.cfg.archetype, data.cfg.size, data.cfg.mode, data);
       return true;
     },

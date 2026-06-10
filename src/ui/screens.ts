@@ -42,6 +42,8 @@ export interface FinalCallbacks {
   onExportPng(): void;
   /** Вернуть код реплея для буфера (null — нет записи). */
   onCopyReplay(): string | null;
+  /** Вернуть код дуэли (счёт + реплей-доказательство). */
+  onCopyDuel(): string | null;
 }
 
 export class Screens {
@@ -236,7 +238,7 @@ export class Screens {
       repRow.className = 'seedrow';
       const repInput = document.createElement('input');
       repInput.type = 'text';
-      repInput.placeholder = 'код реплея (MONAS1:…)';
+      repInput.placeholder = 'код реплея или вызова на дуэль';
       const repBtn = document.createElement('button');
       repBtn.textContent = '▶ Чужой мир';
       repBtn.addEventListener('click', () => {
@@ -306,7 +308,29 @@ export class Screens {
         },
       );
     });
-    share.append(png, rep);
+    const duel = document.createElement('button');
+    duel.textContent = '⚔ Вызов';
+    duel.title = 'Скопировать вызов на дуэль: соперник сыграет тот же мир';
+    duel.addEventListener('click', () => {
+      const code = cb.onCopyDuel();
+      if (!code) return;
+      void navigator.clipboard?.writeText(code).then(
+        () => (duel.textContent = '⚔ Скопирован!'),
+        () => {
+          window.prompt('Код вызова — скопируй вручную:', code);
+        },
+      );
+    });
+    const tg = document.createElement('button');
+    tg.textContent = '✈ В Telegram';
+    tg.title = 'Отправить вызов сообщением';
+    tg.addEventListener('click', () => {
+      const code = cb.onCopyDuel();
+      if (!code) return;
+      const text = encodeURIComponent(`Вызываю тебя в MONAS VIVENS! Открой игру и вставь код:\n${code}`);
+      window.open(`https://t.me/share/url?url=${encodeURIComponent('https://nisferi.github.io/MONAS-VIVENS/')}&text=${text}`);
+    });
+    share.append(png, rep, duel, tg);
 
     panel.append(h);
     if (trialEl) panel.append(trialEl);

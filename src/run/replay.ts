@@ -65,6 +65,18 @@ export class ReplayRecorder {
   }
 }
 
+/** Код дуэли: вызов = счёт + полный реплей (доказательство). */
+export function encodeDuel(score: number, replayCode: string): string {
+  return `MONAS-DUEL:${score}:${replayCode}`;
+}
+
+export function decodeDuel(code: string): { score: number; data: ReplayData } | null {
+  const m = code.trim().match(/^MONAS-DUEL:(\d+):(.+)$/s);
+  if (!m) return null;
+  const data = decodeReplay(m[2] as string);
+  return data ? { score: Number(m[1]), data } : null;
+}
+
 export function decodeReplay(code: string): ReplayData | null {
   try {
     const body = code.trim().replace(/^MONAS1:/, '');
