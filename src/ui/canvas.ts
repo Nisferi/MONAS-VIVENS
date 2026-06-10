@@ -7,9 +7,10 @@
  * Сигнал — бирюза. Пиксели увеличиваются без сглаживания; на крупном зуме
  * появляется тонкая сетка.
  */
-import { Cell, GRID_H, GRID_W, type WorldState } from '../core/grid';
+import { Cell, GRID_H, GRID_W, Terrain, type WorldState } from '../core/grid';
 import { drawLens2 } from '../lens/lens2';
 import { drawLens3, paintFutureGhost } from '../lens/lens3';
+import { paintChronicle } from '../lens/lens4';
 import type { LensId } from '../lens/switcher';
 import type { Cluster } from '../phi/clusters';
 
@@ -24,6 +25,9 @@ export const STRAIN_COLORS: { young: Rgb; old: Rgb }[] = [
 const COLOR_SIGNAL: Rgb = [0x00, 0xe5, 0xcf]; // бирюза
 const COLOR_ASH: Rgb = [0x52, 0x3a, 0x24]; // тёмная глина
 const COLOR_EMPTY: Rgb = [0x12, 0x0d, 0x08]; // поле
+const COLOR_SPORE: Rgb = [0x6b, 0x7d, 0x4f]; // спора: серо-зелёная капсула
+const COLOR_CRYSTAL: Rgb = [0x7d, 0x86, 0xa8]; // кристалл: бледный камень
+const COLOR_SPRING: Rgb = [0x0e, 0x4a, 0x42]; // родник: тёмное свечение воды
 
 /** Возраст, к которому Семя дозревает из янтаря в золото. */
 const MATURE_AGE = 20;
@@ -198,8 +202,10 @@ export class FieldRenderer {
     clusters: Cluster[] = [],
     prev: WorldState | null = null,
     frac = 1,
+    heat: Float32Array | null = null,
   ): void {
-    this.paintCells(state, prev, frac);
+    if (lens === 4 && heat) paintChronicle(this.cellCtx, this.image, heat);
+    else this.paintCells(state, prev, frac);
 
     const { ctx, canvas } = this;
     const s = this.scale();
@@ -211,9 +217,10 @@ export class FieldRenderer {
 
     ctx.imageSmoothingEnabled = false;
 
-    if (lens === 1) {
+    if (lens === 1 || lens === 4) {
+      // Линза 4 — Хроника: тепловая карта уже в cellCanvas.
       ctx.drawImage(this.cellCanvas, originX, originY, GRID_W * s, GRID_H * s);
-      if (s >= GRID_LINES_FROM) this.paintGrid(originX, originY, s);
+      if (lens === 1 && s >= GRID_LINES_FROM) this.paintGrid(originX, originY, s);
     } else if (lens === 2) {
       // Линза Филии: клетки — лишь тень внизу, поверх — узлы и нити.
       ctx.globalAlpha = 0.18;
@@ -252,6 +259,11 @@ export class FieldRenderer {
     }
     if (cell === Cell.Signal) return COLOR_SIGNAL;
     if (cell === Cell.Ash) return COLOR_ASH;
+    if (cell === Cell.Spore) return COLOR_SPORE;
+    // Пустая клетка показывает рельеф под собой.
+    const land = state.terrain[i];
+    if (land === Terrain.Crystal) return COLOR_CRYSTAL;
+    if (land === Terrain.Spring) return COLOR_SPRING;
     return COLOR_EMPTY;
   }
 

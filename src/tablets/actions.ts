@@ -4,15 +4,17 @@
  * условию: это единственная санкционированная рука извне правил
  * (docs/design/09-architecture.md).
  */
-import { Cell, GRID_W, type WorldState } from '../core/grid';
+import { Cell, GRID_W, Terrain, type WorldState } from '../core/grid';
 import { MIN_FORM_SIZE, type Cluster } from '../phi/clusters';
 
-export type ActionKind = 'sever' | 'sleep' | 'sacrifice';
+export type ActionKind = 'sever' | 'sleep' | 'sacrifice' | 'infuse' | 'resow';
 
 export const ACTION_OPTIONS: { kind: ActionKind; label: string }[] = [
   { kind: 'sever', label: 'разорвать перегруз (отсечь край крупнейшей формы)' },
   { kind: 'sleep', label: 'перевести крупнейшую форму в спячку' },
   { kind: 'sacrifice', label: 'пожертвовать наименьшую форму' },
+  { kind: 'infuse', label: 'влить запас энергии (+20)' },
+  { kind: 'resow', label: 'засеять кольцо у сердца крупнейшей формы' },
 ];
 
 export function describeAction(kind: ActionKind): string {
@@ -88,6 +90,34 @@ export function applyAction(
         world.age[idx] = 0;
       }
       return { message: `форма из ${c.size} клеток принесена в жертву` };
+    }
+    case 'infuse': {
+      // Запас, заложенный в глину при высечении, вливается в поле.
+      world.energy = Math.min(100, world.energy + 20);
+      return { message: 'запас энергии влился в поле (+20)' };
+    }
+    case 'resow': {
+      const c = largestForm(clusters);
+      if (!c) return null;
+      const cx = Math.round(c.cx);
+      const cy = Math.round(c.cy);
+      const R = 4;
+      let sown = 0;
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        const x = (cx + Math.round(Math.cos(a) * R) + GRID_W) % GRID_W;
+        const y = (cy + Math.round(Math.sin(a) * R) + GRID_W) % GRID_W;
+        const i = y * GRID_W + x;
+        if (world.cells[i] !== Cell.Seed && world.terrain[i] !== Terrain.Crystal) {
+          world.cells[i] = Cell.Seed;
+          world.age[i] = 0;
+          world.kind[i] = world.kind[c.cells[0] as number] ?? 0;
+          sown++;
+        }
+      }
+      return sown > 0
+        ? { message: `кольцо из ${sown} Семян взошло у сердца формы` }
+        : null;
     }
   }
 }

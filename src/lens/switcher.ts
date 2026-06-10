@@ -6,19 +6,22 @@
 import { MIN_FORM_SIZE, type Cluster } from '../phi/clusters';
 import { STABLE_AGE } from '../phi/mnemosyne';
 
-export type LensId = 1 | 2 | 3;
+export type LensId = 1 | 2 | 3 | 4;
 
 /** Порог Φ, за которым просыпается разум (архетип Эхо снижает его). */
 export const MIND_PHI = 25;
+/** Возраст мира, с которого у него есть история (линза Хроники). */
+export const HISTORY_TICK = 400;
 
 export class LensSwitcher {
   current: LensId = 1;
   unlocked2 = false;
   unlocked3 = false;
+  unlocked4 = false;
   mindPhi = MIND_PHI;
 
   /** Проверяет условия открытия; возвращает текст события или null. */
-  update(clusters: Cluster[], phi: number): string | null {
+  update(clusters: Cluster[], phi: number, worldTick: number): string | null {
     if (!this.unlocked2) {
       const stable = clusters.some((c) => c.size >= MIN_FORM_SIZE && c.age >= STABLE_AGE);
       if (stable) {
@@ -30,6 +33,10 @@ export class LensSwitcher {
       this.unlocked3 = true;
       return 'Разум пробудился. Открылась линза Разума — видно будущее.';
     }
+    if (!this.unlocked4 && worldTick >= HISTORY_TICK) {
+      this.unlocked4 = true;
+      return 'У мира появилась история. Открылась линза Хроники.';
+    }
     return null;
   }
 
@@ -37,6 +44,7 @@ export class LensSwitcher {
   select(lens: LensId): boolean {
     if (lens === 2 && !this.unlocked2) return false;
     if (lens === 3 && !this.unlocked3) return false;
+    if (lens === 4 && !this.unlocked4) return false;
     this.current = lens;
     return true;
   }
@@ -45,5 +53,6 @@ export class LensSwitcher {
     this.current = 1;
     this.unlocked2 = false;
     this.unlocked3 = false;
+    this.unlocked4 = false;
   }
 }

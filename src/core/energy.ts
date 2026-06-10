@@ -20,10 +20,19 @@ export function isThreatActive(me: Me, tickNo: number): boolean {
   return false;
 }
 
-export function nextEnergy(energy: number, aliveSeeds: number, me: Me, tickNo: number): number {
+/** Уровень энергии, при котором Споры решаются прорасти. */
+export const SPROUT_ENERGY = 55;
+
+export function nextEnergy(
+  energy: number,
+  aliveSeeds: number,
+  me: Me,
+  tickNo: number,
+  springInflux = 0,
+): number {
   const threat = isThreatActive(me, tickNo);
-  // Шторм: приток гаснет, расход ×6 — без подготовки поле доводит до голода.
-  const influx = threat ? 0 : me.energyInflux;
+  // Шторм: приток гаснет (даже родники мелеют вдвое), расход ×6.
+  const influx = threat ? springInflux / 2 : me.energyInflux + springInflux;
   const drain = (aliveSeeds / 100) * me.energyDrainPer100 * (threat ? 6 : 1);
   const next = energy + influx - drain;
   return next < 0 ? 0 : next > ENERGY_MAX ? ENERGY_MAX : next;

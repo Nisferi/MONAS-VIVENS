@@ -64,6 +64,8 @@ export interface RunConfig {
   sowBudget: number;
   /** Испытание, если партия — паззл. */
   trialId: string | null;
+  /** Рельеф: сколько гроздей кристаллов и родников родит seed. */
+  terrain: { crystalClusters: number; springs: number };
 }
 
 export function makeRun(
@@ -79,6 +81,7 @@ export function makeRun(
   let startEnergy = 70;
   let mindPhi = 25;
   let horizonScale = 1;
+  let terrain = { crystalClusters: 3, springs: 2 };
 
   switch (biome) {
     case 'swamp':
@@ -92,12 +95,14 @@ export function makeRun(
       me.energyDrainPer100 = 0.09;
       me.ashLifetime = 4;
       density = 0.24;
+      terrain = { crystalClusters: 1, springs: 6 };
       break;
     case 'cave':
       me.energyInflux = 0.45;
       me.energyDrainPer100 = 0.045;
       me.ashLifetime = 14;
       density = 0.12;
+      terrain = { crystalClusters: 9, springs: 1 };
       break;
   }
 
@@ -126,5 +131,6 @@ export function makeRun(
     me, density, startEnergy, mindPhi, horizonScale,
     sowBudget: SOWER_BUDGET,
     trialId: null,
+    terrain,
   };
 }

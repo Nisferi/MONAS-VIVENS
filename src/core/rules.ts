@@ -6,8 +6,11 @@
  * Поле тороидальное: край сворачивается на противоположный — у мира нет
  * стены, только замкнутость (Сфайрос пространства).
  */
-import { STARVATION_LEVEL, nextEnergy } from './energy';
-import { Cell, GRID_H, GRID_W, STRAINS, type WorldState, cloneWorld, onGridResize } from './grid';
+import { SPROUT_ENERGY, STARVATION_LEVEL, nextEnergy } from './energy';
+import {
+  Cell, GRID_H, GRID_W, STRAINS, Terrain, type WorldState, cloneWorld, onGridResize,
+} from './grid';
+import { SPRING_INFLUX } from './terrain';
 
 /** Окно угрозы: приток гаснет, расход растёт. */
 export interface ThreatWindow {
@@ -99,10 +102,14 @@ export function tick(state: WorldState, me: Me): WorldState {
   const srcAge = state.age;
   const srcKind = state.kind;
 
+  const terrain = state.terrain;
   // Голод: на пустой энергии выживание ужесточается — поле само прореживается.
   const starving = state.energy <= STARVATION_LEVEL;
+  // Сытость: Споры решаются прорасти.
+  const sprouting = state.energy >= SPROUT_ENERGY;
   const surviveMax = starving ? me.surviveMax - 1 : me.surviveMax;
   let alive = 0;
+  let springs = 0;
 
   for (let y = 0; y < GRID_H; y++) {
     const row = y * GRID_W;
@@ -111,6 +118,10 @@ export function tick(state: WorldState, me: Me): WorldState {
     for (let x = 0; x < GRID_W; x++) {
       const i = row + x;
       const cell = src[i];
+      const land = terrain[i];
+      if (land === Terrain.Spring) springs++;
+      // Кристалл — стена: жизни на нём нет и не будет.
+      if (land === Terrain.Crystal) continue;
       const xm = XM1[x] as number;
       const xp = XP1[x] as number;
       const n0 = up + xm;
@@ -135,8 +146,18 @@ export function tick(state: WorldState, me: Me): WorldState {
         alive++;
         if (n >= me.surviveMin && n <= surviveMax) {
           next.age[i] = Math.min((srcAge[i] ?? 0) + 1, 0xffff);
+        } else if (starving && n >= me.surviveMin - 1) {
+          // Голодная смерть на грани — жизнь сворачивается в Спору, не в Прах.
+          next.cells[i] = Cell.Spore;
+          next.age[i] = 0;
         } else {
           next.cells[i] = Cell.Ash;
+          next.age[i] = 0;
+        }
+      } else if (cell === Cell.Spore) {
+        // Спора ждёт сытости — и прорастает, помня свой род.
+        if (sprouting) {
+          next.cells[i] = Cell.Seed;
           next.age[i] = 0;
         }
       } else if (cell !== Cell.Signal && n >= me.birthMin && n <= me.birthMax) {
@@ -159,7 +180,7 @@ export function tick(state: WorldState, me: Me): WorldState {
     }
   }
 
-  next.energy = nextEnergy(state.energy, alive, me, state.tick);
+  next.energy = nextEnergy(state.energy, alive, me, state.tick, springs * SPRING_INFLUX);
   next.tick = state.tick + 1;
   return next;
 }

@@ -3,7 +3,10 @@
  * Старт (биом × архетип × seed) → Genesis → Морфогенез → Разум →
  * Нейкос-шторм → развязка → концовка + летопись + счёт.
  */
-import { Cell, GRID_H, GRID_W, STRAINS, createWorld, setGridSize, type WorldState } from './core/grid';
+import {
+  Cell, GRID_H, GRID_W, STRAINS, Terrain, createWorld, setGridSize, type WorldState,
+} from './core/grid';
+import { generateTerrain } from './core/terrain';
 import { DEFAULT_ME, tick, type Me } from './core/rules';
 import { Forecaster } from './future/forecast';
 import { horizonTicks } from './future/horizon';
@@ -86,6 +89,8 @@ let lastForecastBase = -1;
  */
 let aftermathNeikosSum = 0;
 let aftermathNeikosN = 0;
+/** Хроника: сколько тиков жизни видела каждая клетка (линза Ⅳ). */
+let heat = new Float32Array(0);
 
 const milestones: Milestones = {
   firstFormTick: null,
@@ -106,7 +111,14 @@ function measure(): void {
   const neikos = neikosMeter.update(tracker.events);
   report = computePhi(clusters, neikos);
 
-  const unlockEvent = lenses.update(clusters, report.phi);
+  // Хроника: место помнит каждый тик прожитой на нём жизни.
+  if (heat.length === world.cells.length) {
+    for (let i = 0; i < world.cells.length; i++) {
+      if (world.cells[i] === Cell.Seed) heat[i] = (heat[i] as number) + 1;
+    }
+  }
+
+  const unlockEvent = lenses.update(clusters, report.phi, world.tick);
   if (unlockEvent) {
     if (lenses.unlocked2 && milestones.firstFormTick === null) {
       milestones.firstFormTick = world.tick;
@@ -119,6 +131,7 @@ function measure(): void {
       tabletUI.setUnlocked(true);
       sound.event('mind');
     }
+    if (lenses.unlocked4) hud.setLensUnlocked(4, true);
     hud.toast(unlockEvent);
   }
 
@@ -130,7 +143,7 @@ function measure(): void {
   }
 
   // Таблички: спящие правила проверяются каждый тик.
-  for (const msg of tabletEngine.update(world, clusters, report)) {
+  for (const msg of tabletEngine.update(world, clusters, report, me)) {
     hud.toast(msg);
     tabletUI.refresh();
     forecaster.invalidate();
@@ -187,7 +200,9 @@ function startRun(
   setGridSize(cfg.size);
   renderer.rebuildGrid();
   me = { ...cfg.me };
-  world = createWorld(cfg.seed, cfg.density, cfg.startEnergy);
+  const land = generateTerrain(cfg.seed, cfg.terrain);
+  world = createWorld(cfg.seed, cfg.density, cfg.startEnergy, land);
+  heat = new Float32Array(world.cells.length);
 
   tracker.reset();
   neikosMeter.reset();
@@ -470,6 +485,7 @@ function showStart(): void {
 /** Посадить одно Семя; единая точка мутации для руки и для реплея. */
 function setSeed(i: number, strain: number): boolean {
   if (i < 0 || i >= world.cells.length || world.cells[i] === Cell.Seed) return false;
+  if (world.terrain[i] === Terrain.Crystal) return false; // на камне не сеют
   world.cells[i] = Cell.Seed;
   world.age[i] = 0;
   world.kind[i] = strain;
@@ -618,6 +634,9 @@ window.addEventListener('keydown', (e) => {
     case 'Digit3':
       if (lenses.select(3)) hud.markLens(3);
       break;
+    case 'Digit4':
+      if (lenses.select(4)) hud.markLens(4);
+      break;
     case 'Digit0':
       renderer.resetView();
       break;
@@ -694,7 +713,7 @@ function frame(now: number): void {
   renderer.setFutureAlt(lenses.current === 3 && altGhost ? altGhost.cells : null);
   hud.setScrub(lenses.current === 3 && !!snap, snap ? snap.at : null);
 
-  renderer.render(world, lenses.current, clusters, prevWorld, frac);
+  renderer.render(world, lenses.current, clusters, prevWorld, frac, heat);
   hud.update(world, report, lenses.unlocked3 ? horizonNow() : null, STAGE_NAMES[stage]);
   requestAnimationFrame(frame);
 }

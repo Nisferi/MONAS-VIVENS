@@ -118,9 +118,11 @@ export class Hud {
     lens(1, 'Ⅰ', 'Линза Семян (клавиша 1)');
     lens(2, 'Ⅱ', 'Линза Филии (клавиша 2)');
     lens(3, 'Ⅲ', 'Линза Разума (клавиша 3)');
+    lens(4, 'Ⅳ', 'Линза Хроники: память места (клавиша 4)');
     this.markLens(1);
     this.setLensUnlocked(2, false);
     this.setLensUnlocked(3, false);
+    this.setLensUnlocked(4, false);
 
     const btn = (label: string, title: string, onClick: () => void) =>
       makeBtn(root, label, title, onClick);

@@ -7,6 +7,7 @@ import { Cell, type WorldState } from '../core/grid';
 import type { Cluster } from '../phi/clusters';
 import type { PhiReport } from '../phi/phi';
 import { SLEEP_TICKS, applyAction, describeAction, type ActionKind } from './actions';
+import type { Me } from '../core/rules';
 import { conditionMet, describeCondition, type ConditionSpec } from './conditions';
 import { CARVE_COST, canCarve } from './cost';
 
@@ -40,7 +41,7 @@ export class TabletEngine {
   }
 
   /** Проверка условий и пробуждения спящих. Возвращает сообщения событий. */
-  update(world: WorldState, clusters: Cluster[], report: PhiReport): string[] {
+  update(world: WorldState, clusters: Cluster[], report: PhiReport, me: Me): string[] {
     const messages: string[] = [];
 
     // Пробуждение уснувших форм.
@@ -59,7 +60,7 @@ export class TabletEngine {
     // Сработка табличек: одна за тик, чтобы события читались.
     for (const t of this.tablets) {
       if (t.fired) continue;
-      if (!conditionMet(t.condition, report, world.energy)) continue;
+      if (!conditionMet(t.condition, report, world, me)) continue;
       const outcome = applyAction(t.action, world, clusters);
       t.fired = true;
       t.firedTick = world.tick;
