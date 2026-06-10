@@ -7,6 +7,7 @@ import {
 } from '../run/setup';
 import { TRIALS } from '../run/trials';
 import { loadTrialStars } from '../platform/storage';
+import { THEMES, activeTheme, applyTheme } from './themes';
 import type { Ending } from '../run/endings';
 
 export interface StartChoice {
@@ -133,6 +134,16 @@ export class Screens {
     );
     panel.append(trialGroup);
     syncPath();
+
+    // Стиль мира: применяется сразу — живой предпросмотр.
+    panel.append(
+      this.chipGroup(
+        'Стиль',
+        THEMES.map((t) => ({ id: t.id, name: t.name, desc: t.desc })),
+        activeTheme.id,
+        (id) => applyTheme(id),
+      ),
+    );
 
     const seedRow = document.createElement('div');
     seedRow.className = 'seedrow';

@@ -3,7 +3,7 @@
  * титул концовки, текст летописи, seed. PNG для дележа.
  */
 import { Cell, type WorldState } from '../core/grid';
-import { STRAIN_COLORS } from './canvas';
+import { activeTheme } from './themes';
 
 export interface ChronicleCard {
   title: string;
@@ -53,7 +53,7 @@ export function downloadChroniclePng(world: WorldState, side: number, card: Chro
     const x = ox + (i % side) * cellPx;
     const y = oy + Math.floor(i / side) * cellPx;
     if (cell === Cell.Seed) {
-      const ramp = STRAIN_COLORS[world.kind[i] ?? 0] ?? STRAIN_COLORS[0];
+      const ramp = activeTheme.field.strains[world.kind[i] ?? 0] ?? activeTheme.field.strains[0];
       if (ramp) {
         const [r, g, b] = ramp.old;
         ctx.fillStyle = `rgb(${r},${g},${b})`;

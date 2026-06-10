@@ -100,6 +100,37 @@
       border-color: var(--gold);
       font-size: 22px;
     }
+    #morebtns {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #morebtns.show { display: flex; }
+    #paneltabs {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      padding-bottom: 6px;
+    }
+    .paneltab {
+      border-radius: 8px;
+      font-size: 12px;
+      padding: 6px 14px;
+      opacity: 0.6;
+    }
+    .paneltab.active {
+      opacity: 1;
+      border-color: var(--turquoise);
+      color: var(--turquoise);
+    }
+    #journal {
+      max-height: 30vh;
+      overflow-y: auto;
+      font-size: 12px;
+      color: var(--text);
+    }
+    .journalrow { padding: 3px 4px; border-bottom: 1px solid var(--line); opacity: 0.9; }
+    #phispark { opacity: 0.9; }
     button {
       background: var(--panel);
       color: var(--gold);

@@ -8,26 +8,15 @@
  * появляется тонкая сетка.
  */
 import { Cell, GRID_H, GRID_W, Terrain, type WorldState } from '../core/grid';
+import { activeTheme } from './themes';
 import { drawLens2 } from '../lens/lens2';
 import { drawLens3, paintFutureGhost } from '../lens/lens3';
 import { paintChronicle } from '../lens/lens4';
 import type { LensId } from '../lens/switcher';
 import type { Cluster } from '../phi/clusters';
 
-const COLOR_BG = '#0b0805';
+// Все цвета поля приходят из активной темы (ui/themes.ts).
 type Rgb = [number, number, number];
-/** Палитры родов: молодое Семя → зрелое. */
-export const STRAIN_COLORS: { young: Rgb; old: Rgb }[] = [
-  { young: [0xff, 0x8c, 0x1a], old: [0xff, 0xd9, 0x66] }, // Род Огня: янтарь → золото
-  { young: [0x16, 0xa0, 0x6e], old: [0x7b, 0xed, 0xc8] }, // Род Нефрита: нефрит → светлая зелень
-  { young: [0xa0, 0x5e, 0xea], old: [0xd9, 0xb8, 0xff] }, // Род Аметиста: лиловый → светлый
-];
-const COLOR_SIGNAL: Rgb = [0x00, 0xe5, 0xcf]; // бирюза
-const COLOR_ASH: Rgb = [0x52, 0x3a, 0x24]; // тёмная глина
-const COLOR_EMPTY: Rgb = [0x12, 0x0d, 0x08]; // поле
-const COLOR_SPORE: Rgb = [0x6b, 0x7d, 0x4f]; // спора: серо-зелёная капсула
-const COLOR_CRYSTAL: Rgb = [0x7d, 0x86, 0xa8]; // кристалл: бледный камень
-const COLOR_SPRING: Rgb = [0x0e, 0x4a, 0x42]; // родник: тёмное свечение воды
 
 /** Возраст, к которому Семя дозревает из янтаря в золото. */
 const MATURE_AGE = 20;
@@ -49,6 +38,9 @@ export class FieldRenderer {
   private readonly altCtx: CanvasRenderingContext2D;
   private altImage: ImageData;
   private hasAlt = false;
+
+  /** Версия вида: растёт при любом изменении того, что видно. Для dirty-рендера. */
+  version = 0;
 
   /** Зум относительно «вписанного» масштаба: 1 = всё поле на экране. */
   private zoom = 1;
@@ -91,6 +83,7 @@ export class FieldRenderer {
 
   /** Пересобрать офскрин-буферы под текущий размер поля (между партиями). */
   rebuildGrid(): void {
+    this.version++;
     this.cellCanvas.width = GRID_W;
     this.cellCanvas.height = GRID_H;
     this.futureCanvas.width = GRID_W;
@@ -106,6 +99,7 @@ export class FieldRenderer {
   }
 
   private resize(): void {
+    this.version++;
     const dpr = window.devicePixelRatio || 1;
     this.canvas.width = Math.round(window.innerWidth * dpr);
     this.canvas.height = Math.round(window.innerHeight * dpr);
@@ -129,6 +123,7 @@ export class FieldRenderer {
 
   /** Зум к точке экрана (CSS-пиксели), factor > 1 — приближение. */
   zoomAt(factor: number, cssX: number, cssY: number): void {
+    this.version++;
     const dpr = window.devicePixelRatio || 1;
     const before = this.screenToCell(cssX * dpr, cssY * dpr);
     this.zoom *= factor;
@@ -141,6 +136,7 @@ export class FieldRenderer {
 
   /** Сдвиг взгляда на (dx, dy) CSS-пикселей. */
   panBy(cssDx: number, cssDy: number): void {
+    this.version++;
     const dpr = window.devicePixelRatio || 1;
     const s = this.scale();
     this.centerX -= (cssDx * dpr) / s;
@@ -149,6 +145,7 @@ export class FieldRenderer {
   }
 
   resetView(): void {
+    this.version++;
     this.zoom = 1;
     this.centerX = GRID_W / 2;
     this.centerY = GRID_H / 2;
@@ -178,8 +175,10 @@ export class FieldRenderer {
 
   /** Обновить призрак будущего (или скрыть его, передав null). */
   setFuture(cells: Uint8Array | null): void {
+    if (!cells && !this.hasFuture) return;
+    this.version++;
     if (cells) {
-      paintFutureGhost(this.futureCtx, this.futureImage, cells);
+      paintFutureGhost(this.futureCtx, this.futureImage, cells, activeTheme.ghost);
       this.hasFuture = true;
     } else {
       this.hasFuture = false;
@@ -188,8 +187,10 @@ export class FieldRenderer {
 
   /** Веер будущих: лиловый призрак старого закона. */
   setFutureAlt(cells: Uint8Array | null): void {
+    if (!cells && !this.hasAlt) return;
+    this.version++;
     if (cells) {
-      paintFutureGhost(this.altCtx, this.altImage, cells, [0xc4, 0x7a, 0xff]);
+      paintFutureGhost(this.altCtx, this.altImage, cells, activeTheme.ghostAlt);
       this.hasAlt = true;
     } else {
       this.hasAlt = false;
@@ -212,7 +213,7 @@ export class FieldRenderer {
     const originX = canvas.width / 2 - this.centerX * s;
     const originY = canvas.height / 2 - this.centerY * s;
 
-    ctx.fillStyle = COLOR_BG;
+    ctx.fillStyle = activeTheme.canvasBg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.imageSmoothingEnabled = false;
@@ -239,17 +240,17 @@ export class FieldRenderer {
     }
 
     // Рамка поля — край мира.
-    ctx.strokeStyle = 'rgba(217, 152, 64, 0.5)';
+    ctx.strokeStyle = activeTheme.frame;
     ctx.lineWidth = Math.max(1, s * 0.06);
     ctx.strokeRect(originX, originY, GRID_W * s, GRID_H * s);
   }
 
   private cellColor(state: WorldState, i: number): Rgb {
+    const f = activeTheme.field;
     const cell = state.cells[i];
     if (cell === Cell.Seed) {
       const t = Math.min((state.age[i] ?? 0) / MATURE_AGE, 1);
-      const ramp =
-        STRAIN_COLORS[state.kind[i] ?? 0] ?? (STRAIN_COLORS[0] as { young: Rgb; old: Rgb });
+      const ramp = f.strains[state.kind[i] ?? 0] ?? (f.strains[0] as { young: Rgb; old: Rgb });
       const { young, old } = ramp;
       return [
         young[0] + (old[0] - young[0]) * t,
@@ -257,14 +258,14 @@ export class FieldRenderer {
         young[2] + (old[2] - young[2]) * t,
       ];
     }
-    if (cell === Cell.Signal) return COLOR_SIGNAL;
-    if (cell === Cell.Ash) return COLOR_ASH;
-    if (cell === Cell.Spore) return COLOR_SPORE;
+    if (cell === Cell.Signal) return f.signal;
+    if (cell === Cell.Ash) return f.ash;
+    if (cell === Cell.Spore) return f.spore;
     // Пустая клетка показывает рельеф под собой.
     const land = state.terrain[i];
-    if (land === Terrain.Crystal) return COLOR_CRYSTAL;
-    if (land === Terrain.Spring) return COLOR_SPRING;
-    return COLOR_EMPTY;
+    if (land === Terrain.Crystal) return f.crystal;
+    if (land === Terrain.Spring) return f.spring;
+    return f.empty;
   }
 
   /**
@@ -297,7 +298,7 @@ export class FieldRenderer {
 
   private paintGrid(originX: number, originY: number, s: number): void {
     const { ctx } = this;
-    ctx.strokeStyle = 'rgba(255, 217, 102, 0.10)';
+    ctx.strokeStyle = activeTheme.grid;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let x = 0; x <= GRID_W; x++) {

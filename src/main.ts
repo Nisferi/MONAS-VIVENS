@@ -29,6 +29,7 @@ import { trialById, trialStars } from './run/trials';
 import { downloadChroniclePng } from './ui/chronicleImage';
 import { CodexScreen } from './ui/codex';
 import { playEndingScene } from './ui/scenes';
+import { THEMES, applyTheme, loadThemeId } from './ui/themes';
 import {
   STAGE_NAMES, SURVIVAL_THRESHOLD, currentStage, endTick, firstThreatTick, lastThreatEnd,
 } from './run/stages';
@@ -48,6 +49,7 @@ const SPEEDS = [1, 2, 4, 0.5] as const;
 
 initTelegram();
 initPwa();
+applyTheme(loadThemeId());
 
 const canvas = document.getElementById('field') as HTMLCanvasElement;
 
@@ -260,6 +262,7 @@ function startRun(
     hud.toast('Чужой мир. Смотри, как творил другой, — руки убраны.');
   }
 
+  hud.resetRunUi();
   hud.markLens(1);
   hud.setLensUnlocked(2, false);
   hud.setLensUnlocked(3, false);
@@ -437,7 +440,7 @@ const hud = new Hud(me, {
   },
 });
 
-const tabletUI = new TabletUI(document.getElementById('mepanel') as HTMLElement, tabletEngine, {
+const tabletUI = new TabletUI(hud.tabletsPane, tabletEngine, {
   onCarve(condition, action) {
     if (player) return 'В чужом мире нельзя высекать.';
     const err = tabletEngine.carve(condition, action, world);
@@ -483,12 +486,15 @@ function showStart(): void {
 // ---- Кисть посева ----
 
 /** Посадить одно Семя; единая точка мутации для руки и для реплея. */
+let worldDirty = 0;
+
 function setSeed(i: number, strain: number): boolean {
   if (i < 0 || i >= world.cells.length || world.cells[i] === Cell.Seed) return false;
   if (world.terrain[i] === Terrain.Crystal) return false; // на камне не сеют
   world.cells[i] = Cell.Seed;
   world.age[i] = 0;
   world.kind[i] = strain;
+  worldDirty++;
   return true;
 }
 
@@ -658,6 +664,7 @@ let lastStage = '';
 let lastAmbient = 0;
 /** Мир прошлого тика — для дыхания поля между шагами. */
 let prevWorld: WorldState | null = null;
+let lastRenderKey = '';
 
 function frame(now: number): void {
   accumulator += now - lastTime;
@@ -713,7 +720,11 @@ function frame(now: number): void {
   renderer.setFutureAlt(lenses.current === 3 && altGhost ? altGhost.cells : null);
   hud.setScrub(lenses.current === 3 && !!snap, snap ? snap.at : null);
 
-  renderer.render(world, lenses.current, clusters, prevWorld, frac, heat);
+  const renderKey = `${world.tick}|${lenses.current}|${renderer.version}|${worldDirty}|${scrubFrac}|${Math.round(frac * 50)}|${altGhost ? 1 : 0}`;
+  if (!paused || renderKey !== lastRenderKey) {
+    renderer.render(world, lenses.current, clusters, prevWorld, frac, heat);
+    lastRenderKey = renderKey;
+  }
   hud.update(world, report, lenses.unlocked3 ? horizonNow() : null, STAGE_NAMES[stage]);
   requestAnimationFrame(frame);
 }

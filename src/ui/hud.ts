@@ -6,7 +6,7 @@ import { Cell, STRAIN_NAMES, type WorldState } from '../core/grid';
 import { ME_LIMITS, type Me } from '../core/rules';
 import type { LensId } from '../lens/switcher';
 import type { PhiReport } from '../phi/phi';
-import { STRAIN_COLORS } from './canvas';
+import { activeTheme } from './themes';
 
 export interface HudCallbacks {
   onMeChange(me: Me): void;
@@ -67,6 +67,12 @@ export class Hud {
   private lensBtns = new Map<LensId, HTMLButtonElement>();
   private toastEl!: HTMLElement;
   private toastTimer = 0;
+  /** Куда TabletUI вешает свой интерфейс (вкладка «Таблички»). */
+  tabletsPane!: HTMLElement;
+  private journalPane!: HTMLElement;
+  private sparkCanvas!: HTMLCanvasElement;
+  private phiHistory: number[] = [];
+  private lastTick = 0;
 
   constructor(initialMe: Me, private readonly cb: HudCallbacks) {
     this.me = { ...initialMe };
@@ -89,10 +95,41 @@ export class Hud {
     this.horizonEl.id = 'horizonstat';
     this.budgetEl = document.createElement('span');
     this.budgetEl.id = 'budgetstat';
+    this.sparkCanvas = document.createElement('canvas');
+    this.sparkCanvas.id = 'phispark';
+    this.sparkCanvas.width = 90;
+    this.sparkCanvas.height = 22;
     root.append(
-      this.phiEl, this.energyEl, this.stageEl, this.seedsEl,
+      this.phiEl, this.sparkCanvas, this.energyEl, this.stageEl, this.seedsEl,
       this.tickEl, this.horizonEl, this.budgetEl,
     );
+  }
+
+  /** Спарклайн Φ: дыхание сознания за последние ~100 отметок. */
+  private drawSpark(): void {
+    const ctx = this.sparkCanvas.getContext('2d');
+    if (!ctx) return;
+    const { width: w, height: h } = this.sparkCanvas;
+    ctx.clearRect(0, 0, w, h);
+    const hist = this.phiHistory;
+    if (hist.length < 2) return;
+    let max = 10;
+    for (const v of hist) if (v > max) max = v;
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--gold') || '#ffd966';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i < hist.length; i++) {
+      const x = (i / (hist.length - 1)) * (w - 2) + 1;
+      const y = h - 2 - ((hist[i] as number) / max) * (h - 4);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  resetRunUi(): void {
+    this.phiHistory = [];
+    this.clearJournal();
   }
 
   private buildSideButtons(root: HTMLElement): void {
@@ -140,13 +177,21 @@ export class Hud {
       this.applyStrain(this.cb.onStrainCycle()),
     );
     this.applyStrain(0);
-    btn('＋', 'Приблизить', () => this.cb.onZoomIn());
-    btn('－', 'Отдалить', () => this.cb.onZoomOut());
-    btn('◻', 'Всё поле (0)', () => this.cb.onViewReset());
-    const muteBtn = btn('♪', 'Звук вкл/выкл (M)', () => {
+    this.strainBtn.style.display = 'none'; // род виден только при кисти
+    btn('◻', 'Всё поле (0); зум — колесо или пинч', () => this.cb.onViewReset());
+
+    // Редкие действия — за «⋯», чтобы колонка дышала.
+    const moreWrap = document.createElement('div');
+    moreWrap.id = 'morebtns';
+    const moreBtn = btn('⋯', 'Ещё: звук, новый мир', () =>
+      moreWrap.classList.toggle('show'),
+    );
+    void moreBtn;
+    root.append(moreWrap);
+    const muteBtn = makeBtn(moreWrap, '♪', 'Звук вкл/выкл (M)', () => {
       muteBtn.textContent = this.cb.onMuteToggle() ? '∅' : '♪';
     });
-    btn('✦', 'Завершить мир и начать новый', () => this.cb.onReseed());
+    makeBtn(moreWrap, '✦', 'Завершить мир и начать новый', () => this.cb.onReseed());
   }
 
   applyPause(paused: boolean): void {
@@ -155,7 +200,7 @@ export class Hud {
   }
 
   applyStrain(strain: number): void {
-    const ramp = STRAIN_COLORS[strain] ?? STRAIN_COLORS[0];
+    const ramp = activeTheme.field.strains[strain] ?? activeTheme.field.strains[0];
     if (!ramp) return;
     const [r, g, b] = ramp.old;
     this.strainBtn.style.color = `rgb(${r}, ${g}, ${b})`;
@@ -188,6 +233,7 @@ export class Hud {
   applyBrush(brush: boolean): void {
     this.brushBtn.textContent = brush ? '✎' : '✋';
     this.brushBtn.classList.toggle('active', brush);
+    this.strainBtn.style.display = brush ? '' : 'none';
     this.brushBtn.title = brush
       ? 'Кисть включена: тяни по полю, чтобы сеять (B — выкл)'
       : 'Кисть: сеять Семена пальцем/мышью (B)';
@@ -205,17 +251,66 @@ export class Hud {
   private buildMePanel(panel: HTMLElement): void {
     const handle = document.createElement('button');
     handle.id = 'mehandle';
-    handle.textContent = '— Начертай Ме —';
+    handle.textContent = '— Скрижаль —';
     handle.addEventListener('click', () => panel.classList.toggle('hidden'));
     panel.append(handle);
 
+    // Вкладки нижней панели: законы, судьба, память.
+    const tabs = document.createElement('div');
+    tabs.id = 'paneltabs';
+    panel.append(tabs);
+
+    const mePane = document.createElement('div');
+    this.tabletsPane = document.createElement('div');
+    this.journalPane = document.createElement('div');
+    this.journalPane.id = 'journal';
+    panel.append(mePane, this.tabletsPane, this.journalPane);
+
+    const panes: [string, HTMLElement][] = [
+      ['Ме', mePane],
+      ['Таблички', this.tabletsPane],
+      ['Журнал', this.journalPane],
+    ];
+    const tabBtns: HTMLButtonElement[] = [];
+    for (const [name, pane] of panes) {
+      const b = document.createElement('button');
+      b.className = 'paneltab';
+      b.textContent = name;
+      b.addEventListener('click', () => {
+        for (const tb of tabBtns) tb.classList.remove('active');
+        b.classList.add('active');
+        for (const [, p] of panes) p.style.display = 'none';
+        pane.style.display = '';
+      });
+      tabBtns.push(b);
+      tabs.append(b);
+    }
+    (tabBtns[0] as HTMLButtonElement).classList.add('active');
+    this.tabletsPane.style.display = 'none';
+    this.journalPane.style.display = 'none';
+
     this.breakdownEl = document.createElement('div');
     this.breakdownEl.id = 'phibreak';
-    panel.append(this.breakdownEl);
+    mePane.append(this.breakdownEl);
 
     for (const spec of SLIDERS) {
-      panel.append(this.buildSlider(spec));
+      mePane.append(this.buildSlider(spec));
     }
+  }
+
+  /** Журнал: память обо всех событиях партии. */
+  log(text: string): void {
+    const row = document.createElement('div');
+    row.className = 'journalrow';
+    row.textContent = `${this.lastTick} · ${text}`;
+    this.journalPane.prepend(row);
+    while (this.journalPane.childElementCount > 60) {
+      this.journalPane.lastElementChild?.remove();
+    }
+  }
+
+  clearJournal(): void {
+    this.journalPane.innerHTML = '';
   }
 
   private buildSlider(spec: SliderSpec): HTMLElement {
@@ -281,12 +376,21 @@ export class Hud {
     this.toastEl.classList.add('show');
     window.clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => this.toastEl.classList.remove('show'), 3500);
+    this.log(text);
   }
 
   update(state: WorldState, report: PhiReport, horizon: number | null, stage: string): void {
     let seeds = 0;
     for (let i = 0; i < state.cells.length; i++) {
       if (state.cells[i] === Cell.Seed) seeds++;
+    }
+    if (state.tick !== this.lastTick) {
+      this.lastTick = state.tick;
+      if (state.tick % 8 === 0) {
+        this.phiHistory.push(report.phi);
+        if (this.phiHistory.length > 100) this.phiHistory.shift();
+        this.drawSpark();
+      }
     }
     this.phiEl.textContent = `Φ ${report.phi.toFixed(1)}`;
     this.energyEl.textContent = `⚡ ${Math.round(state.energy)}`;
