@@ -10,6 +10,7 @@ export interface Milestones {
   firstFormTick: number | null;
   mindTick: number | null;
   threatTick: number;
+  stormCount: number;
   tabletsFired: string[];
   finalTick: number;
   finalPhi: number;
@@ -34,7 +35,9 @@ export function writeChronicle(m: Milestones, ending: Ending, cfg: RunConfig): s
     lines.push('Разум не пробудился: будущее осталось тьмой.');
   }
 
-  lines.push(`На ${m.threatTick} тике пришёл Нейкос-шторм — как и было предначертано.`);
+  lines.push(
+    `На ${m.threatTick} тике пришёл первый из ${m.stormCount} Нейкос-штормов — как и было предначертано.`,
+  );
 
   if (m.tabletsFired.length > 0) {
     lines.push(`Таблички Судеб говорили: ${m.tabletsFired.join('; ')}.`);

@@ -14,7 +14,10 @@ export const ENERGY_MAX = 100;
 export const STARVATION_LEVEL = 1;
 
 export function isThreatActive(me: Me, tickNo: number): boolean {
-  return tickNo >= me.threatTick && tickNo < me.threatTick + me.threatDuration;
+  for (const t of me.threats) {
+    if (tickNo >= t.tick && tickNo < t.tick + t.duration) return true;
+  }
+  return false;
 }
 
 export function nextEnergy(energy: number, aliveSeeds: number, me: Me, tickNo: number): number {

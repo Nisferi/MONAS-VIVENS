@@ -87,6 +87,19 @@
       flex-direction: column;
       gap: 8px;
     }
+    #lensbtns {
+      position: fixed;
+      left: calc(10px + env(safe-area-inset-left, 0));
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .iconbtn.mainbtn {
+      border-color: var(--gold);
+      font-size: 22px;
+    }
     button {
       background: var(--panel);
       color: var(--gold);
@@ -140,10 +153,10 @@
     }
     #toast.show { opacity: 1; }
 
-    /* Голоса древних */
+    /* Голоса древних — только вверху, под капсулой статов */
     #quote {
       position: fixed;
-      bottom: calc(46px + env(safe-area-inset-bottom, 0px));
+      top: calc(52px + env(safe-area-inset-top, 0px));
       left: 50%;
       transform: translateX(-50%);
       width: min(92vw, 640px);
@@ -168,7 +181,8 @@
     }
     #budgetstat { color: var(--turquoise); font-weight: bold; }
     @media (max-width: 520px) {
-      #quote { font-size: 11px; bottom: calc(42px + env(safe-area-inset-bottom, 0px)); }
+      #quote { font-size: 11px; top: calc(64px + env(safe-area-inset-top, 0px)); }
+      #lensbtns { gap: 6px; }
     }
 
     /* Экраны старта и финала */
@@ -398,6 +412,7 @@
     <div id="title">MONAS VIVENS</div>
     <div id="stats"></div>
   </div>
+  <div id="lensbtns"></div>
   <div id="sidebtns"></div>
   <div id="mepanel"></div>
   <script type="module" src="/src/main.ts"></script>

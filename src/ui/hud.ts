@@ -21,12 +21,17 @@ export interface HudCallbacks {
   onBrushToggle(): boolean;
   /** Цикл рода кисти; возвращает новый род (0..STRAINS-1). */
   onStrainCycle(): number;
-  /** Цикл скорости; возвращает новый множитель (1, 2, 4). */
+  /** Цикл скорости; возвращает новый множитель (0.5, 1, 2, 4). */
   onSpeedCycle(): number;
+  /** Переключает звук; возвращает новое состояние «выключен». */
+  onMuteToggle(): boolean;
 }
 
+/** Ползункам доступны только числовые законы (массив угроз — не для рук). */
+type NumericMeKey = { [K in keyof Me]: Me[K] extends number ? K : never }[keyof Me];
+
 interface SliderSpec {
-  key: keyof Me;
+  key: NumericMeKey;
   label: string;
   min: number;
   max: number;
@@ -87,19 +92,20 @@ export class Hud {
   }
 
   private buildSideButtons(root: HTMLElement): void {
-    const btn = (label: string, title: string, onClick: () => void) => {
+    const makeBtn = (parent: HTMLElement, label: string, title: string, onClick: () => void) => {
       const b = document.createElement('button');
       b.className = 'iconbtn';
       b.textContent = label;
       b.title = title;
       b.addEventListener('click', onClick);
-      root.append(b);
+      parent.append(b);
       return b;
     };
 
-    // Линзы.
+    // Линзы — отдельной колонкой слева: взгляд отдельно от рук.
+    const lensRoot = (document.getElementById('lensbtns') ?? root) as HTMLElement;
     const lens = (id: LensId, label: string, title: string) => {
-      const b = btn(label, title, () => {
+      const b = makeBtn(lensRoot, label, title, () => {
         if (this.cb.onLensSelect(id)) this.markLens(id);
         else this.toast('Эта линза ещё закрыта. Дай форме устояться.');
       });
@@ -112,9 +118,14 @@ export class Hud {
     this.setLensUnlocked(2, false);
     this.setLensUnlocked(3, false);
 
+    const btn = (label: string, title: string, onClick: () => void) =>
+      makeBtn(root, label, title, onClick);
+
     this.pauseBtn = btn('⏸', 'Остановить время (пробел)', () => this.applyPause(this.cb.onPauseToggle()));
-    const speedBtn = btn('×1', 'Скорость времени (S)', () => {
-      speedBtn.textContent = `×${this.cb.onSpeedCycle()}`;
+    this.pauseBtn.classList.add('mainbtn');
+    const fmtSpeed = (s: number) => (s === 0.5 ? '×½' : `×${s}`);
+    const speedBtn = btn('×1', 'Скорость времени: ½, 1, 2, 4', () => {
+      speedBtn.textContent = fmtSpeed(this.cb.onSpeedCycle());
     });
     this.brushBtn = btn('✋', 'Кисть: сеять Семена пальцем/мышью (B)', () =>
       this.applyBrush(this.cb.onBrushToggle()),
@@ -123,10 +134,13 @@ export class Hud {
       this.applyStrain(this.cb.onStrainCycle()),
     );
     this.applyStrain(0);
-    btn('✦', 'Новые Семена', () => this.cb.onReseed());
     btn('＋', 'Приблизить', () => this.cb.onZoomIn());
     btn('－', 'Отдалить', () => this.cb.onZoomOut());
     btn('◻', 'Всё поле (0)', () => this.cb.onViewReset());
+    const muteBtn = btn('♪', 'Звук вкл/выкл (M)', () => {
+      muteBtn.textContent = this.cb.onMuteToggle() ? '∅' : '♪';
+    });
+    btn('✦', 'Завершить мир и начать новый', () => this.cb.onReseed());
   }
 
   applyPause(paused: boolean): void {

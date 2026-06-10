@@ -49,3 +49,26 @@ export function saveSetup(setup: SavedSetup): void {
     /* ок */
   }
 }
+
+/**
+ * Эхо мира: отпечаток последней жизни погибшего/завершённого мира.
+ * Следующий мир того же размера взойдёт на этом прахе.
+ */
+const ECHO_KEY = 'monas.echo';
+
+export function saveEcho(size: number, indices: number[]): void {
+  try {
+    localStorage.setItem(`${ECHO_KEY}.${size}`, JSON.stringify(indices));
+  } catch {
+    /* ок */
+  }
+}
+
+export function loadEcho(size: number): number[] | null {
+  try {
+    const raw = localStorage.getItem(`${ECHO_KEY}.${size}`);
+    return raw ? (JSON.parse(raw) as number[]) : null;
+  } catch {
+    return null;
+  }
+}

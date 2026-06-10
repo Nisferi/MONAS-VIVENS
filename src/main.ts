@@ -12,13 +12,16 @@ import { ClusterTracker, type Cluster } from './phi/clusters';
 import { NeikosMeter } from './phi/neikos';
 import { computePhi, type PhiReport } from './phi/phi';
 import { initPwa } from './platform/pwa';
-import { loadBest, loadSetup, saveBest, saveSetup } from './platform/storage';
+import { loadBest, loadEcho, loadSetup, saveBest, saveEcho, saveSetup } from './platform/storage';
 import { initTelegram } from './platform/telegram';
 import { writeChronicle, type Milestones } from './run/chronicle';
 import { decideEnding } from './run/endings';
 import { computeScore } from './run/score';
 import { SOWER_BUDGET, makeRun, type RunConfig } from './run/setup';
-import { STAGE_NAMES, SURVIVAL_THRESHOLD, currentStage, endTick } from './run/stages';
+import {
+  STAGE_NAMES, SURVIVAL_THRESHOLD, currentStage, endTick, firstThreatTick, lastThreatEnd,
+} from './run/stages';
+import { SoundEngine } from './ui/sound';
 import { pickQuote } from './ui/quotes';
 import { TabletEngine } from './tablets/engine';
 import { FieldRenderer } from './ui/canvas';
@@ -30,7 +33,7 @@ const TICKS_PER_SECOND = 10;
 const TICK_MS = 1000 / TICKS_PER_SECOND;
 const ZOOM_STEP = 1.5;
 const FORECAST_EVERY = 8;
-const SPEEDS = [1, 2, 4] as const;
+const SPEEDS = [1, 2, 4, 0.5] as const;
 
 initTelegram();
 initPwa();
@@ -59,14 +62,22 @@ const neikosMeter = new NeikosMeter();
 const lenses = new LensSwitcher();
 const forecaster = new Forecaster();
 const tabletEngine = new TabletEngine();
+const sound = new SoundEngine();
 let clusters: Cluster[] = [];
 let report: PhiReport = computePhi([], 0);
 let lastForecastBase = -1;
+/*
+ * Нейкос для суда концовки усредняется по развязке: миг финала видит только
+ * остывший пепел, а среднее помнит, был ли мир жив, встречая последний шторм.
+ */
+let aftermathNeikosSum = 0;
+let aftermathNeikosN = 0;
 
 const milestones: Milestones = {
   firstFormTick: null,
   mindTick: null,
   threatTick: 0,
+  stormCount: 0,
   tabletsFired: [],
   finalTick: 0,
   finalPhi: 0,
@@ -86,22 +97,30 @@ function measure(): void {
     if (lenses.unlocked2 && milestones.firstFormTick === null) {
       milestones.firstFormTick = world.tick;
       hud.setLensUnlocked(2, true);
+      sound.event('form');
     }
     if (lenses.unlocked3 && milestones.mindTick === null) {
       milestones.mindTick = world.tick;
       hud.setLensUnlocked(3, true);
       tabletUI.setUnlocked(true);
+      sound.event('mind');
     }
     hud.toast(unlockEvent);
   }
 
   if (lenses.unlocked3) horizonMax = Math.max(horizonMax, horizonNow());
 
+  if (me.threats.length > 0 && world.tick >= lastThreatEnd(me)) {
+    aftermathNeikosSum += report.neikos;
+    aftermathNeikosN++;
+  }
+
   // Таблички: спящие правила проверяются каждый тик.
   for (const msg of tabletEngine.update(world, clusters, report)) {
     hud.toast(msg);
     tabletUI.refresh();
     forecaster.invalidate();
+    sound.event('tablet');
   }
 }
 
@@ -140,6 +159,8 @@ function startRun(
   horizonMax = 0;
   speedIdx = 0;
   paused = false;
+  aftermathNeikosSum = 0;
+  aftermathNeikosN = 0;
 
   // Сеятель: время стоит, в горсти — Семена, кисть уже в руке.
   if (cfg.mode === 'sower') {
@@ -155,8 +176,23 @@ function startRun(
 
   milestones.firstFormTick = null;
   milestones.mindTick = null;
-  milestones.threatTick = me.threatTick;
+  milestones.threatTick = firstThreatTick(me);
+  milestones.stormCount = me.threats.length;
   milestones.tabletsFired = [];
+
+  // Эхо мира: новый мир восходит на прахе прежнего (если размеры совпали).
+  const echo = loadEcho(cfg.size);
+  if (echo && echo.length > 0) {
+    let laid = 0;
+    for (const i of echo) {
+      if (i >= 0 && i < world.cells.length && world.cells[i] === Cell.Empty) {
+        world.cells[i] = Cell.Ash;
+        world.age[i] = 0;
+        laid++;
+      }
+    }
+    if (laid > 0) hud.toast('Этот мир восходит на прахе прежнего.');
+  }
 
   hud.markLens(1);
   hud.setLensUnlocked(2, false);
@@ -168,6 +204,7 @@ function startRun(
   tabletUI.refresh();
   renderer.resetView();
 
+  sound.init(); // нажатие «Сотвори мир» — жест, разрешающий звук
   measure();
   running = true;
   hud.toast(
@@ -188,17 +225,26 @@ function aliveSeeds(): number {
 function finishRun(): void {
   running = false;
   const survived = aliveSeeds() >= SURVIVAL_THRESHOLD;
+  sound.event('end');
+
+  // Эхо мира: запомнить отпечаток последней жизни для следующего творения.
+  const imprint: number[] = [];
+  for (let i = 0; i < world.cells.length; i++) {
+    if (world.cells[i] === Cell.Seed) imprint.push(i);
+  }
+  saveEcho(cfg.size, imprint);
 
   milestones.finalTick = world.tick;
   milestones.finalPhi = report.phi;
   milestones.tabletsFired = [...tabletEngine.firedLog];
 
+  const endNeikos = aftermathNeikosN > 0 ? aftermathNeikosSum / aftermathNeikosN : report.neikos;
   const ending = decideEnding({
     survived,
     phi: report.phi,
-    neikos: report.neikos,
+    neikos: endNeikos,
     philia: report.philia,
-    sawFuture: milestones.mindTick !== null && milestones.mindTick < me.threatTick,
+    sawFuture: milestones.mindTick !== null && milestones.mindTick < firstThreatTick(me),
     tabletsCarved: tabletEngine.carvedCount,
     tabletsFired: tabletEngine.firedCount,
   });
@@ -207,7 +253,7 @@ function finishRun(): void {
     phi: report.phi,
     survived,
     horizonMax,
-    neikos: report.neikos,
+    neikos: endNeikos,
     chaos: report.chaos,
     ending,
     meEdits,
@@ -273,6 +319,7 @@ const hud = new Hud(me, {
     speedIdx = (speedIdx + 1) % SPEEDS.length;
     return SPEEDS[speedIdx] as number;
   },
+  onMuteToggle: () => sound.toggleMute(),
 });
 
 const tabletUI = new TabletUI(document.getElementById('mepanel') as HTMLElement, tabletEngine, {
@@ -314,6 +361,7 @@ function sowAt(cssX: number, cssY: number): void {
     world.kind[i] = brushStrain;
     sowBudget--;
     hud.setBudget(sowBudget);
+    sound.event('sow');
     if (sowBudget === 0) hud.toast('Горсть пуста. Пусти время (⏸) — и смотри, что взойдёт.');
     return;
   }
@@ -432,6 +480,9 @@ window.addEventListener('keydown', (e) => {
       brush = !brush;
       hud.applyBrush(brush);
       break;
+    case 'KeyM':
+      sound.toggleMute();
+      break;
   }
 });
 
@@ -440,6 +491,7 @@ window.addEventListener('keydown', (e) => {
 let lastTime = performance.now();
 let accumulator = 0;
 let lastStage = '';
+let lastAmbient = 0;
 
 function frame(now: number): void {
   accumulator += now - lastTime;
@@ -461,13 +513,21 @@ function frame(now: number): void {
 
   const stage = currentStage(world, me, lenses.unlocked2, lenses.unlocked3);
   if (running && STAGE_NAMES[stage] !== lastStage) {
-    if (stage === 'crisis') hud.toast('Нейкос приближается. Шторм начался.');
-    if (stage === 'aftermath') hud.toast('Шторм прошёл. Мир считает выживших.');
+    if (stage === 'crisis') {
+      hud.toast('Нейкос приближается. Шторм начался.');
+      sound.event('storm');
+    }
+    if (stage === 'respite') hud.toast('Шторм прошёл. Передышка — но судьба ещё не исчерпана.');
+    if (stage === 'aftermath') hud.toast('Последний шторм отгремел. Мир считает выживших.');
     lastStage = STAGE_NAMES[stage];
   }
   if (running) {
     const q = pickQuote(stage, world.tick);
     hud.setQuote(q.text, q.source);
+    if (now - lastAmbient > 500) {
+      lastAmbient = now;
+      sound.ambient(aliveSeeds() / world.cells.length, world.energy, stage);
+    }
   }
 
   const f = forecaster.latest;

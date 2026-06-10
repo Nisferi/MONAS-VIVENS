@@ -56,6 +56,7 @@ const BY_STAGE: Record<Stage, Quote[]> = {
   morpho: FORM,
   mind: MIND,
   crisis: CRISIS,
+  respite: MIND,
   aftermath: AFTERMATH,
 };
 

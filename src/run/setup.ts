@@ -4,7 +4,7 @@
  */
 import { hashSeed } from '../core/rng';
 import { DEFAULT_ME, type Me } from '../core/rules';
-import { threatFromSeed } from '../future/threat';
+import { threatsFromSeed } from '../future/threat';
 
 export type BiomeId = 'swamp' | 'spring' | 'cave';
 export type ArchetypeId = 'spark' | 'clay' | 'echo';
@@ -70,9 +70,7 @@ export function makeRun(
   mode: RunMode = 'flow',
 ): RunConfig {
   const seed = hashSeed(`${seedText}:${biome}:${archetype}:${size}:${mode}`);
-  const threat = threatFromSeed(seed);
-
-  const me: Me = { ...DEFAULT_ME, threatTick: threat.tick, threatDuration: threat.duration };
+  const me: Me = { ...DEFAULT_ME, threats: threatsFromSeed(seed) };
   let density = 0.18;
   let startEnergy = 70;
   let mindPhi = 25;

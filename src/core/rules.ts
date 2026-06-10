@@ -9,7 +9,13 @@
 import { STARVATION_LEVEL, nextEnergy } from './energy';
 import { Cell, GRID_H, GRID_W, STRAINS, type WorldState, cloneWorld, onGridResize } from './grid';
 
-/** Ме — божественные законы мира: соседство, энергия, заложенная судьбой угроза. */
+/** Окно угрозы: приток гаснет, расход растёт. */
+export interface ThreatWindow {
+  tick: number;
+  duration: number;
+}
+
+/** Ме — божественные законы мира: соседство, энергия, заложенные судьбой угрозы. */
 export interface Me {
   /** Рождение: пустая клетка оживает при числе соседей в [birthMin..birthMax]. */
   birthMin: number;
@@ -22,9 +28,8 @@ export interface Me {
   /** Энергия: приток за тик и расход на 100 живых Семян за тик. */
   energyInflux: number;
   energyDrainPer100: number;
-  /** Детерминированная угроза: окно тиков, в котором приток гаснет (из seed). */
-  threatTick: number;
-  threatDuration: number;
+  /** Детерминированная судьба: серия Нейкос-штормов (из seed). */
+  threats: ThreatWindow[];
 }
 
 /** Классический Конвей: B3/S23 — проверенная точка старта эмерджентности. */
@@ -36,8 +41,7 @@ export const DEFAULT_ME: Me = {
   ashLifetime: 6,
   energyInflux: 0.6,
   energyDrainPer100: 0.06,
-  threatTick: Number.MAX_SAFE_INTEGER,
-  threatDuration: 0,
+  threats: [],
 };
 
 export const ME_LIMITS = {
