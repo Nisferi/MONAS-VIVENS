@@ -1,13 +1,18 @@
 /**
  * ui/screens — экран старта (биом × архетип) и финал (концовка, счёт, летопись).
  */
-import { ARCHETYPES, BIOMES, type ArchetypeId, type BiomeId } from '../run/setup';
+import {
+  ARCHETYPES, BIOMES, FIELD_SIZES, SOWER_BUDGET,
+  type ArchetypeId, type BiomeId, type RunMode,
+} from '../run/setup';
 import type { Ending } from '../run/endings';
 
 export interface StartChoice {
   biome: BiomeId;
   archetype: ArchetypeId;
   seedText: string;
+  size: number;
+  mode: RunMode;
 }
 
 export interface FinalData {
@@ -29,7 +34,7 @@ export class Screens {
   }
 
   showStart(
-    defaults: { biome: BiomeId; archetype: ArchetypeId },
+    defaults: { biome: BiomeId; archetype: ArchetypeId; size: number; mode: RunMode },
     best: number,
     onStart: (choice: StartChoice) => void,
   ): void {
@@ -55,10 +60,31 @@ export class Screens {
 
     let biome = defaults.biome;
     let archetype = defaults.archetype;
+    let size = defaults.size;
+    let mode = defaults.mode;
 
+    panel.append(
+      this.chipGroup(
+        'Путь',
+        [
+          { id: 'flow', name: 'Поток', desc: 'мир рождается из первичного бульона' },
+          { id: 'sower', name: 'Сеятель', desc: `пустой мир и ${SOWER_BUDGET} Семян в горсти` },
+        ],
+        mode,
+        (id) => (mode = id as RunMode),
+      ),
+    );
     panel.append(this.chipGroup('Место мира', BIOMES, biome, (id) => (biome = id as BiomeId)));
     panel.append(
       this.chipGroup('Первое Семя', ARCHETYPES, archetype, (id) => (archetype = id as ArchetypeId)),
+    );
+    panel.append(
+      this.chipGroup(
+        'Простор',
+        FIELD_SIZES.map((f) => ({ id: String(f.side), name: f.name, desc: f.desc })),
+        String(size),
+        (id) => (size = Number(id)),
+      ),
     );
 
     const seedRow = document.createElement('div');
@@ -77,7 +103,7 @@ export class Screens {
     start.addEventListener('click', () => {
       const seedText = seedInput.value.trim() || String(Date.now() % 1000000);
       this.hide();
-      onStart({ biome, archetype, seedText });
+      onStart({ biome, archetype, seedText, size, mode });
     });
     panel.append(start);
 

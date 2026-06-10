@@ -15,6 +15,8 @@ export interface ScoreInput {
   ending: Ending;
   meEdits: number;
   tabletsCarved: number;
+  /** Сеятель: жизнь из горсти ценнее жизни из бульона. */
+  sower: boolean;
 }
 
 const ENDING_BONUS: Record<string, number> = {
@@ -32,7 +34,8 @@ export function computeScore(i: ScoreInput): number {
     (i.survived ? 30 : 0) +
     i.horizonMax / 10 +
     balanceBonus +
-    (ENDING_BONUS[i.ending.id] ?? 0) -
+    (ENDING_BONUS[i.ending.id] ?? 0) +
+    (i.sower ? 20 : 0) -
     i.chaos * 20 -
     i.meEdits -
     2 * i.tabletsCarved;

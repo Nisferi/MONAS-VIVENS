@@ -3,12 +3,13 @@
  * Гоняет ТОТ ЖЕ чистый tick() из core: отдельного кода будущего не существует —
  * это контракт детерминизма (docs/design/05-future.md).
  */
-import type { WorldState } from '../core/grid';
+import { setGridSize, type WorldState } from '../core/grid';
 import { tick, type Me } from '../core/rules';
 
 interface ForecastRequest {
   cells: Uint8Array;
   age: Uint16Array;
+  kind: Uint8Array;
   baseTick: number;
   energy: number;
   me: Me;
@@ -16,8 +17,10 @@ interface ForecastRequest {
 }
 
 self.onmessage = (e: MessageEvent<ForecastRequest>) => {
-  const { cells, age, baseTick, energy, me, steps } = e.data;
-  let state: WorldState = { tick: baseTick, cells, age, energy };
+  const { cells, age, kind, baseTick, energy, me, steps } = e.data;
+  // Размер поля выводим из данных — у воркера своя копия модуля grid.
+  setGridSize(Math.round(Math.sqrt(cells.length)));
+  let state: WorldState = { tick: baseTick, cells, age, kind, energy };
   for (let i = 0; i < steps; i++) {
     state = tick(state, me);
   }

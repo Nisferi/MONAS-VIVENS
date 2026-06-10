@@ -6,7 +6,7 @@
  * Идентичность между тиками — по максимальному пересечению клеток с прошлым тиком.
  * Только читает состояние мира, не пишет ничего.
  */
-import { Cell, GRID_H, GRID_W, GRID_SIZE, type WorldState } from '../core/grid';
+import { Cell, GRID_H, GRID_W, GRID_SIZE, type WorldState, onGridResize } from '../core/grid';
 
 export interface Cluster {
   id: number;
@@ -47,22 +47,31 @@ interface RawCluster {
 /*
  * Таблицы заворота тора и переиспользуемые буферы: flood fill бежит каждый тик,
  * незачем платить за остатки от деления и свежие аллокации.
+ * Пересобираются при смене размера поля.
  */
-const XM1 = new Int32Array(GRID_W);
-const XP1 = new Int32Array(GRID_W);
-const ROW_UP = new Int32Array(GRID_H);
-const ROW_DOWN = new Int32Array(GRID_H);
-for (let x = 0; x < GRID_W; x++) {
-  XM1[x] = (x - 1 + GRID_W) % GRID_W;
-  XP1[x] = (x + 1) % GRID_W;
-}
-for (let y = 0; y < GRID_H; y++) {
-  ROW_UP[y] = ((y - 1 + GRID_H) % GRID_H) * GRID_W;
-  ROW_DOWN[y] = ((y + 1) % GRID_H) * GRID_W;
-}
-const visited = new Uint8Array(GRID_SIZE);
-const stack = new Int32Array(GRID_SIZE);
+let XM1 = new Int32Array(0);
+let XP1 = new Int32Array(0);
+let ROW_UP = new Int32Array(0);
+let ROW_DOWN = new Int32Array(0);
+let visited = new Uint8Array(0);
+let stack = new Int32Array(0);
 const neigh = new Int32Array(8);
+onGridResize(() => {
+  XM1 = new Int32Array(GRID_W);
+  XP1 = new Int32Array(GRID_W);
+  ROW_UP = new Int32Array(GRID_H);
+  ROW_DOWN = new Int32Array(GRID_H);
+  for (let x = 0; x < GRID_W; x++) {
+    XM1[x] = (x - 1 + GRID_W) % GRID_W;
+    XP1[x] = (x + 1) % GRID_W;
+  }
+  for (let y = 0; y < GRID_H; y++) {
+    ROW_UP[y] = ((y - 1 + GRID_H) % GRID_H) * GRID_W;
+    ROW_DOWN[y] = ((y + 1) % GRID_H) * GRID_W;
+  }
+  visited = new Uint8Array(GRID_SIZE);
+  stack = new Int32Array(GRID_SIZE);
+});
 
 /** Связные компоненты живых клеток. */
 function findRaw(state: WorldState): RawCluster[] {
@@ -219,7 +228,8 @@ export class ClusterTracker {
   }
 
   reset(): void {
-    this.prevOwner.fill(-1);
+    // Размер поля мог смениться между партиями — буфер пересоздаём.
+    this.prevOwner = new Int32Array(GRID_SIZE).fill(-1);
     this.prevAges.clear();
     this.prevSizes.clear();
     this.events = { died: 0, split: 0 };

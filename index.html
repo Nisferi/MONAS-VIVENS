@@ -140,6 +140,37 @@
     }
     #toast.show { opacity: 1; }
 
+    /* Голоса древних */
+    #quote {
+      position: fixed;
+      bottom: calc(46px + env(safe-area-inset-bottom, 0px));
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(92vw, 640px);
+      text-align: center;
+      font-size: 12px;
+      font-style: italic;
+      line-height: 1.5;
+      color: rgba(217, 152, 64, 0.85);
+      opacity: 0;
+      transition: opacity 1.2s;
+      pointer-events: none;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+    }
+    #quote.show { opacity: 1; }
+    #quote cite {
+      display: block;
+      font-style: normal;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      color: rgba(255, 217, 102, 0.6);
+      margin-top: 2px;
+    }
+    #budgetstat { color: var(--turquoise); font-weight: bold; }
+    @media (max-width: 520px) {
+      #quote { font-size: 11px; bottom: calc(42px + env(safe-area-inset-bottom, 0px)); }
+    }
+
     /* Экраны старта и финала */
     #screen {
       position: fixed;

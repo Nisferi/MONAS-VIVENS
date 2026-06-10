@@ -33,11 +33,26 @@ export const ARCHETYPES: ArchetypeInfo[] = [
   { id: 'echo', name: 'Эхо', desc: 'сигналы: ранний и дальний взор в будущее' },
 ];
 
+/** Путь партии: Поток — мир из бульона; Сеятель — горсть Семян руками. */
+export type RunMode = 'flow' | 'sower';
+
+export const FIELD_SIZES = [
+  { side: 48, name: 'Малый', desc: '48×48 — быстрая драма' },
+  { side: 64, name: 'Средний', desc: '64×64 — классика' },
+  { side: 96, name: 'Великий', desc: '96×96 — эпос' },
+];
+
+/** Сколько Семян в горсти Сеятеля. */
+export const SOWER_BUDGET = 12;
+
 export interface RunConfig {
   seedText: string;
   seed: number;
   biome: BiomeId;
   archetype: ArchetypeId;
+  mode: RunMode;
+  /** Сторона поля. */
+  size: number;
   me: Me;
   density: number;
   startEnergy: number;
@@ -47,8 +62,14 @@ export interface RunConfig {
   horizonScale: number;
 }
 
-export function makeRun(seedText: string, biome: BiomeId, archetype: ArchetypeId): RunConfig {
-  const seed = hashSeed(`${seedText}:${biome}:${archetype}`);
+export function makeRun(
+  seedText: string,
+  biome: BiomeId,
+  archetype: ArchetypeId,
+  size = 64,
+  mode: RunMode = 'flow',
+): RunConfig {
+  const seed = hashSeed(`${seedText}:${biome}:${archetype}:${size}:${mode}`);
   const threat = threatFromSeed(seed);
 
   const me: Me = { ...DEFAULT_ME, threatTick: threat.tick, threatDuration: threat.duration };
@@ -95,5 +116,11 @@ export function makeRun(seedText: string, biome: BiomeId, archetype: ArchetypeId
       break;
   }
 
-  return { seedText, seed, biome, archetype, me, density, startEnergy, mindPhi, horizonScale };
+  // Сеятель начинает с пустоты: вся жизнь — из его горсти.
+  if (mode === 'sower') density = 0;
+
+  return {
+    seedText, seed, biome, archetype, mode, size,
+    me, density, startEnergy, mindPhi, horizonScale,
+  };
 }

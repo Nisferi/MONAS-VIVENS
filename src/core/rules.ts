@@ -7,7 +7,7 @@
  * стены, только замкнутость (Сфайрос пространства).
  */
 import { STARVATION_LEVEL, nextEnergy } from './energy';
-import { Cell, GRID_H, GRID_W, type WorldState, cloneWorld } from './grid';
+import { Cell, GRID_H, GRID_W, STRAINS, type WorldState, cloneWorld, onGridResize } from './grid';
 
 /** Ме — божественные законы мира: соседство, энергия, заложенная судьбой угроза. */
 export interface Me {
@@ -48,18 +48,44 @@ export const ME_LIMITS = {
 /*
  * Предвычисленные таблицы заворота тора: убирают 8 взятий остатка на клетку
  * в самом горячем цикле игры (его же гоняет прогноз будущего до 200 раз подряд).
+ * Пересобираются при смене размера поля.
  */
-const XM1 = new Int32Array(GRID_W);
-const XP1 = new Int32Array(GRID_W);
-const ROW_UP = new Int32Array(GRID_H);
-const ROW_DOWN = new Int32Array(GRID_H);
-for (let x = 0; x < GRID_W; x++) {
-  XM1[x] = (x - 1 + GRID_W) % GRID_W;
-  XP1[x] = (x + 1) % GRID_W;
-}
-for (let y = 0; y < GRID_H; y++) {
-  ROW_UP[y] = ((y - 1 + GRID_H) % GRID_H) * GRID_W;
-  ROW_DOWN[y] = ((y + 1) % GRID_H) * GRID_W;
+let XM1 = new Int32Array(0);
+let XP1 = new Int32Array(0);
+let ROW_UP = new Int32Array(0);
+let ROW_DOWN = new Int32Array(0);
+onGridResize(() => {
+  XM1 = new Int32Array(GRID_W);
+  XP1 = new Int32Array(GRID_W);
+  ROW_UP = new Int32Array(GRID_H);
+  ROW_DOWN = new Int32Array(GRID_H);
+  for (let x = 0; x < GRID_W; x++) {
+    XM1[x] = (x - 1 + GRID_W) % GRID_W;
+    XP1[x] = (x + 1) % GRID_W;
+  }
+  for (let y = 0; y < GRID_H; y++) {
+    ROW_UP[y] = ((y - 1 + GRID_H) % GRID_H) * GRID_W;
+    ROW_DOWN[y] = ((y + 1) % GRID_H) * GRID_W;
+  }
+});
+
+/** Род новорождённого — большинство среди живых родителей; ничья — младший род. */
+const strainVotes = new Int32Array(STRAINS);
+const birthNeigh = new Int32Array(8);
+function inheritStrain(src: Uint8Array, kind: Uint8Array): number {
+  strainVotes.fill(0);
+  for (let k = 0; k < 8; k++) {
+    const ni = birthNeigh[k] as number;
+    if (src[ni] === Cell.Seed) {
+      const s = kind[ni] as number;
+      strainVotes[s] = (strainVotes[s] as number) + 1;
+    }
+  }
+  let best = 0;
+  for (let s = 1; s < STRAINS; s++) {
+    if ((strainVotes[s] as number) > (strainVotes[best] as number)) best = s;
+  }
+  return best;
 }
 
 /** Один шаг мира. Не мутирует вход. */
@@ -67,6 +93,7 @@ export function tick(state: WorldState, me: Me): WorldState {
   const next = cloneWorld(state);
   const src = state.cells;
   const srcAge = state.age;
+  const srcKind = state.kind;
 
   // Голод: на пустой энергии выживание ужесточается — поле само прореживается.
   const starving = state.energy <= STARVATION_LEVEL;
@@ -82,15 +109,23 @@ export function tick(state: WorldState, me: Me): WorldState {
       const cell = src[i];
       const xm = XM1[x] as number;
       const xp = XP1[x] as number;
+      const n0 = up + xm;
+      const n1 = up + x;
+      const n2 = up + xp;
+      const n3 = row + xm;
+      const n4 = row + xp;
+      const n5 = down + xm;
+      const n6 = down + x;
+      const n7 = down + xp;
       const n =
-        (src[up + xm] === Cell.Seed ? 1 : 0) +
-        (src[up + x] === Cell.Seed ? 1 : 0) +
-        (src[up + xp] === Cell.Seed ? 1 : 0) +
-        (src[row + xm] === Cell.Seed ? 1 : 0) +
-        (src[row + xp] === Cell.Seed ? 1 : 0) +
-        (src[down + xm] === Cell.Seed ? 1 : 0) +
-        (src[down + x] === Cell.Seed ? 1 : 0) +
-        (src[down + xp] === Cell.Seed ? 1 : 0);
+        (src[n0] === Cell.Seed ? 1 : 0) +
+        (src[n1] === Cell.Seed ? 1 : 0) +
+        (src[n2] === Cell.Seed ? 1 : 0) +
+        (src[n3] === Cell.Seed ? 1 : 0) +
+        (src[n4] === Cell.Seed ? 1 : 0) +
+        (src[n5] === Cell.Seed ? 1 : 0) +
+        (src[n6] === Cell.Seed ? 1 : 0) +
+        (src[n7] === Cell.Seed ? 1 : 0);
 
       if (cell === Cell.Seed) {
         alive++;
@@ -105,6 +140,9 @@ export function tick(state: WorldState, me: Me): WorldState {
         // Это сохраняет точную динамику Конвея при любом ashLifetime.
         next.cells[i] = Cell.Seed;
         next.age[i] = 0;
+        birthNeigh[0] = n0; birthNeigh[1] = n1; birthNeigh[2] = n2; birthNeigh[3] = n3;
+        birthNeigh[4] = n4; birthNeigh[5] = n5; birthNeigh[6] = n6; birthNeigh[7] = n7;
+        next.kind[i] = inheritStrain(src, srcKind);
       } else if (cell === Cell.Ash) {
         const a = (srcAge[i] ?? 0) + 1;
         if (a >= me.ashLifetime) {

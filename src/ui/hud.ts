@@ -2,10 +2,11 @@
  * ui/hud — статистика (включая Φ), кнопки линз/вида/времени и панель Ме.
  * Читает всё, не считает ничего. Тон текстов — docs/design/11-aesthetics.md.
  */
-import { Cell, type WorldState } from '../core/grid';
+import { Cell, STRAIN_NAMES, type WorldState } from '../core/grid';
 import { ME_LIMITS, type Me } from '../core/rules';
 import type { LensId } from '../lens/switcher';
 import type { PhiReport } from '../phi/phi';
+import { STRAIN_COLORS } from './canvas';
 
 export interface HudCallbacks {
   onMeChange(me: Me): void;
@@ -18,6 +19,8 @@ export interface HudCallbacks {
   onLensSelect(lens: LensId): boolean;
   /** Переключает кисть посева; возвращает новое состояние «кисть включена». */
   onBrushToggle(): boolean;
+  /** Цикл рода кисти; возвращает новый род (0..STRAINS-1). */
+  onStrainCycle(): number;
   /** Цикл скорости; возвращает новый множитель (1, 2, 4). */
   onSpeedCycle(): number;
 }
@@ -47,6 +50,10 @@ export class Hud {
   private horizonEl!: HTMLElement;
   private pauseBtn!: HTMLButtonElement;
   private brushBtn!: HTMLButtonElement;
+  private strainBtn!: HTMLButtonElement;
+  private budgetEl!: HTMLElement;
+  private quoteEl!: HTMLElement;
+  private quoteText = '';
   private breakdownEl!: HTMLElement;
   private lensBtns = new Map<LensId, HTMLButtonElement>();
   private toastEl!: HTMLElement;
@@ -71,7 +78,12 @@ export class Hud {
     this.seedsEl = document.createElement('span');
     this.horizonEl = document.createElement('span');
     this.horizonEl.id = 'horizonstat';
-    root.append(this.phiEl, this.energyEl, this.stageEl, this.seedsEl, this.tickEl, this.horizonEl);
+    this.budgetEl = document.createElement('span');
+    this.budgetEl.id = 'budgetstat';
+    root.append(
+      this.phiEl, this.energyEl, this.stageEl, this.seedsEl,
+      this.tickEl, this.horizonEl, this.budgetEl,
+    );
   }
 
   private buildSideButtons(root: HTMLElement): void {
@@ -107,6 +119,10 @@ export class Hud {
     this.brushBtn = btn('✋', 'Кисть: сеять Семена пальцем/мышью (B)', () =>
       this.applyBrush(this.cb.onBrushToggle()),
     );
+    this.strainBtn = btn('●', 'Род кисти: какого цвета сеять', () =>
+      this.applyStrain(this.cb.onStrainCycle()),
+    );
+    this.applyStrain(0);
     btn('✦', 'Новые Семена', () => this.cb.onReseed());
     btn('＋', 'Приблизить', () => this.cb.onZoomIn());
     btn('－', 'Отдалить', () => this.cb.onZoomOut());
@@ -116,6 +132,37 @@ export class Hud {
   applyPause(paused: boolean): void {
     this.pauseBtn.textContent = paused ? '▶' : '⏸';
     this.pauseBtn.title = paused ? 'Пустить время (пробел)' : 'Остановить время (пробел)';
+  }
+
+  applyStrain(strain: number): void {
+    const ramp = STRAIN_COLORS[strain] ?? STRAIN_COLORS[0];
+    if (!ramp) return;
+    const [r, g, b] = ramp.old;
+    this.strainBtn.style.color = `rgb(${r}, ${g}, ${b})`;
+    this.strainBtn.style.borderColor = `rgb(${r}, ${g}, ${b})`;
+    this.strainBtn.title = `Кисть сеет: ${STRAIN_NAMES[strain] ?? ''}`;
+  }
+
+  /** Горсть Сеятеля: сколько Семян осталось расставить (null — скрыть). */
+  setBudget(left: number | null): void {
+    this.budgetEl.textContent = left === null ? '' : `Горсть ✦${left}`;
+  }
+
+  /** Голос древних в верхней строке. */
+  setQuote(text: string, source: string): void {
+    const full = `${text} — ${source}`;
+    if (full === this.quoteText) return;
+    this.quoteText = full;
+    this.quoteEl.classList.remove('show');
+    window.setTimeout(() => {
+      this.quoteEl.innerHTML = '';
+      const t = document.createElement('span');
+      t.textContent = text;
+      const s = document.createElement('cite');
+      s.textContent = source;
+      this.quoteEl.append(t, s);
+      this.quoteEl.classList.add('show');
+    }, 400);
   }
 
   applyBrush(brush: boolean): void {
@@ -182,6 +229,9 @@ export class Hud {
     this.toastEl = document.createElement('div');
     this.toastEl.id = 'toast';
     document.body.append(this.toastEl);
+    this.quoteEl = document.createElement('div');
+    this.quoteEl.id = 'quote';
+    document.body.append(this.quoteEl);
   }
 
   toast(text: string): void {

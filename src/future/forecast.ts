@@ -35,9 +35,10 @@ export class Forecaster {
     this.busy = true;
     const cells = state.cells.slice();
     const age = state.age.slice();
+    const kind = state.kind.slice();
     this.worker.postMessage(
-      { cells, age, baseTick: state.tick, energy: state.energy, me, steps },
-      [cells.buffer, age.buffer],
+      { cells, age, kind, baseTick: state.tick, energy: state.energy, me, steps },
+      [cells.buffer, age.buffer, kind.buffer],
     );
     return true;
   }

@@ -1,7 +1,7 @@
 /**
  * platform/storage — локальные сохранения: рекорд и последний выбор старта.
  */
-import type { ArchetypeId, BiomeId } from '../run/setup';
+import type { ArchetypeId, BiomeId, RunMode } from '../run/setup';
 
 const BEST_KEY = 'monas.best';
 const SETUP_KEY = 'monas.setup';
@@ -9,6 +9,8 @@ const SETUP_KEY = 'monas.setup';
 export interface SavedSetup {
   biome: BiomeId;
   archetype: ArchetypeId;
+  size?: number;
+  mode?: RunMode;
 }
 
 export function loadBest(): number {

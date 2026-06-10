@@ -14,11 +14,16 @@ import type { LensId } from '../lens/switcher';
 import type { Cluster } from '../phi/clusters';
 
 const COLOR_BG = '#0b0805';
-const COLOR_YOUNG: [number, number, number] = [0xff, 0x8c, 0x1a]; // янтарь
-const COLOR_OLD: [number, number, number] = [0xff, 0xd9, 0x66]; // золото
-const COLOR_SIGNAL: [number, number, number] = [0x00, 0xe5, 0xcf]; // бирюза
-const COLOR_ASH: [number, number, number] = [0x52, 0x3a, 0x24]; // тёмная глина
-const COLOR_EMPTY: [number, number, number] = [0x12, 0x0d, 0x08]; // поле
+type Rgb = [number, number, number];
+/** Палитры родов: молодое Семя → зрелое. */
+export const STRAIN_COLORS: { young: Rgb; old: Rgb }[] = [
+  { young: [0xff, 0x8c, 0x1a], old: [0xff, 0xd9, 0x66] }, // Род Огня: янтарь → золото
+  { young: [0x16, 0xa0, 0x6e], old: [0x7b, 0xed, 0xc8] }, // Род Нефрита: нефрит → светлая зелень
+  { young: [0xa0, 0x5e, 0xea], old: [0xd9, 0xb8, 0xff] }, // Род Аметиста: лиловый → светлый
+];
+const COLOR_SIGNAL: Rgb = [0x00, 0xe5, 0xcf]; // бирюза
+const COLOR_ASH: Rgb = [0x52, 0x3a, 0x24]; // тёмная глина
+const COLOR_EMPTY: Rgb = [0x12, 0x0d, 0x08]; // поле
 
 /** Возраст, к которому Семя дозревает из янтаря в золото. */
 const MATURE_AGE = 20;
@@ -31,10 +36,10 @@ export class FieldRenderer {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly cellCanvas: HTMLCanvasElement;
   private readonly cellCtx: CanvasRenderingContext2D;
-  private readonly image: ImageData;
+  private image: ImageData;
   private readonly futureCanvas: HTMLCanvasElement;
   private readonly futureCtx: CanvasRenderingContext2D;
-  private readonly futureImage: ImageData;
+  private futureImage: ImageData;
   private hasFuture = false;
 
   /** Зум относительно «вписанного» масштаба: 1 = всё поле на экране. */
@@ -66,6 +71,18 @@ export class FieldRenderer {
 
     this.resize();
     window.addEventListener('resize', () => this.resize());
+  }
+
+  /** Пересобрать офскрин-буферы под текущий размер поля (между партиями). */
+  rebuildGrid(): void {
+    this.cellCanvas.width = GRID_W;
+    this.cellCanvas.height = GRID_H;
+    this.futureCanvas.width = GRID_W;
+    this.futureCanvas.height = GRID_H;
+    this.image = this.cellCtx.createImageData(GRID_W, GRID_H);
+    this.futureImage = this.futureCtx.createImageData(GRID_W, GRID_H);
+    this.hasFuture = false;
+    this.resetView();
   }
 
   private resize(): void {
@@ -195,10 +212,12 @@ export class FieldRenderer {
       let c = COLOR_EMPTY;
       if (cell === Cell.Seed) {
         const t = Math.min(age / MATURE_AGE, 1);
+        const ramp = STRAIN_COLORS[state.kind[i] ?? 0] ?? (STRAIN_COLORS[0] as { young: Rgb; old: Rgb });
+        const { young, old } = ramp;
         c = [
-          COLOR_YOUNG[0] + (COLOR_OLD[0] - COLOR_YOUNG[0]) * t,
-          COLOR_YOUNG[1] + (COLOR_OLD[1] - COLOR_YOUNG[1]) * t,
-          COLOR_YOUNG[2] + (COLOR_OLD[2] - COLOR_YOUNG[2]) * t,
+          young[0] + (old[0] - young[0]) * t,
+          young[1] + (old[1] - young[1]) * t,
+          young[2] + (old[2] - young[2]) * t,
         ];
       } else if (cell === Cell.Signal) {
         c = COLOR_SIGNAL;

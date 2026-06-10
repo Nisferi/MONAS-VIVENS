@@ -3,7 +3,7 @@
  * Старт (биом × архетип × seed) → Genesis → Морфогенез → Разум →
  * Нейкос-шторм → развязка → концовка + летопись + счёт.
  */
-import { Cell, GRID_H, GRID_W, createWorld, type WorldState } from './core/grid';
+import { Cell, GRID_H, GRID_W, STRAINS, createWorld, setGridSize, type WorldState } from './core/grid';
 import { DEFAULT_ME, tick, type Me } from './core/rules';
 import { Forecaster } from './future/forecast';
 import { horizonTicks } from './future/horizon';
@@ -17,8 +17,9 @@ import { initTelegram } from './platform/telegram';
 import { writeChronicle, type Milestones } from './run/chronicle';
 import { decideEnding } from './run/endings';
 import { computeScore } from './run/score';
-import { makeRun, type RunConfig } from './run/setup';
+import { SOWER_BUDGET, makeRun, type RunConfig } from './run/setup';
 import { STAGE_NAMES, SURVIVAL_THRESHOLD, currentStage, endTick } from './run/stages';
+import { pickQuote } from './ui/quotes';
 import { TabletEngine } from './tablets/engine';
 import { FieldRenderer } from './ui/canvas';
 import { Hud } from './ui/hud';
@@ -45,8 +46,13 @@ let running = false;
 let paused = false;
 let speedIdx = 0;
 let brush = false;
+let brushStrain = 0;
 let meEdits = 0;
 let horizonMax = 0;
+/** Сеятель: сколько Семян осталось в горсти (null — режим Потока). */
+let sowBudget: number | null = null;
+/** Сеятель: после первого пуска времени рука убрана навсегда. */
+let sowingLocked = false;
 
 const tracker = new ClusterTracker();
 const neikosMeter = new NeikosMeter();
@@ -109,9 +115,17 @@ function refreshForecast(force = false): void {
 
 // ---- Старт и финал партии ----
 
-function startRun(seedText: string, biome: RunConfig['biome'], archetype: RunConfig['archetype']): void {
-  cfg = makeRun(seedText, biome, archetype);
-  saveSetup({ biome, archetype });
+function startRun(
+  seedText: string,
+  biome: RunConfig['biome'],
+  archetype: RunConfig['archetype'],
+  size: number,
+  mode: RunConfig['mode'],
+): void {
+  cfg = makeRun(seedText, biome, archetype, size, mode);
+  saveSetup({ biome, archetype, size, mode });
+  setGridSize(cfg.size);
+  renderer.rebuildGrid();
   me = { ...cfg.me };
   world = createWorld(cfg.seed, cfg.density, cfg.startEnergy);
 
@@ -125,8 +139,19 @@ function startRun(seedText: string, biome: RunConfig['biome'], archetype: RunCon
   meEdits = 0;
   horizonMax = 0;
   speedIdx = 0;
-  brush = false;
   paused = false;
+
+  // Сеятель: время стоит, в горсти — Семена, кисть уже в руке.
+  if (cfg.mode === 'sower') {
+    sowBudget = SOWER_BUDGET;
+    sowingLocked = false;
+    brush = true;
+    paused = true;
+  } else {
+    sowBudget = null;
+    sowingLocked = false;
+    brush = false;
+  }
 
   milestones.firstFormTick = null;
   milestones.mindTick = null;
@@ -136,15 +161,20 @@ function startRun(seedText: string, biome: RunConfig['biome'], archetype: RunCon
   hud.markLens(1);
   hud.setLensUnlocked(2, false);
   hud.setLensUnlocked(3, false);
-  hud.applyPause(false);
-  hud.applyBrush(false);
+  hud.applyPause(paused);
+  hud.applyBrush(brush);
+  hud.setBudget(sowBudget);
   tabletUI.setUnlocked(false);
   tabletUI.refresh();
   renderer.resetView();
 
   measure();
   running = true;
-  hud.toast('Мир сотворён. Начертай Ме — и жди, когда форма устоит.');
+  hud.toast(
+    cfg.mode === 'sower'
+      ? `В твоей горсти ${SOWER_BUDGET} Семян. Расставь их — и пусти время (⏸).`
+      : 'Мир сотворён. Начертай Ме — и жди, когда форма устоит.',
+  );
 }
 
 function aliveSeeds(): number {
@@ -182,6 +212,7 @@ function finishRun(): void {
     ending,
     meEdits,
     tabletsCarved: tabletEngine.carvedCount,
+    sower: cfg.mode === 'sower',
   });
 
   const isRecord = saveBest(score);
@@ -216,10 +247,7 @@ const hud = new Hud(me, {
     forecaster.invalidate();
     refreshForecast(true);
   },
-  onPauseToggle() {
-    paused = !paused;
-    return paused;
-  },
+  onPauseToggle: () => togglePause(),
   onReseed() {
     if (running) finishRun();
     else showStart();
@@ -233,8 +261,13 @@ const hud = new Hud(me, {
     return ok;
   },
   onBrushToggle() {
+    if (sowingLocked && sowBudget !== null) return false;
     brush = !brush;
     return brush;
+  },
+  onStrainCycle() {
+    brushStrain = (brushStrain + 1) % STRAINS;
+    return brushStrain;
   },
   onSpeedCycle() {
     speedIdx = (speedIdx + 1) % SPEEDS.length;
@@ -254,9 +287,14 @@ const tabletUI = new TabletUI(document.getElementById('mepanel') as HTMLElement,
 function showStart(): void {
   const saved = loadSetup();
   screens.showStart(
-    { biome: saved?.biome ?? 'swamp', archetype: saved?.archetype ?? 'clay' },
+    {
+      biome: saved?.biome ?? 'swamp',
+      archetype: saved?.archetype ?? 'clay',
+      size: saved?.size ?? 64,
+      mode: saved?.mode ?? 'flow',
+    },
     loadBest(),
-    (choice) => startRun(choice.seedText, choice.biome, choice.archetype),
+    (choice) => startRun(choice.seedText, choice.biome, choice.archetype, choice.size, choice.mode),
   );
 }
 
@@ -265,6 +303,21 @@ function showStart(): void {
 function sowAt(cssX: number, cssY: number): void {
   const c = renderer.cellAt(cssX, cssY);
   if (!c) return;
+
+  // Сеятель: по одному Семени из горсти, после пуска времени — рука убрана.
+  if (sowBudget !== null) {
+    if (sowingLocked) return;
+    const i = c.y * GRID_W + c.x;
+    if (sowBudget <= 0 || world.cells[i] === Cell.Seed) return;
+    world.cells[i] = Cell.Seed;
+    world.age[i] = 0;
+    world.kind[i] = brushStrain;
+    sowBudget--;
+    hud.setBudget(sowBudget);
+    if (sowBudget === 0) hud.toast('Горсть пуста. Пусти время (⏸) — и смотри, что взойдёт.');
+    return;
+  }
+
   const spots = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const;
   for (const [dx, dy] of spots) {
     const x = (c.x + dx + GRID_W) % GRID_W;
@@ -273,10 +326,24 @@ function sowAt(cssX: number, cssY: number): void {
     if (world.cells[i] !== Cell.Seed) {
       world.cells[i] = Cell.Seed;
       world.age[i] = 0;
+      world.kind[i] = brushStrain;
     }
   }
   forecaster.invalidate();
   refreshForecast(true);
+}
+
+function togglePause(): boolean {
+  paused = !paused;
+  // Сеятель отпустил время — посев закончен навсегда: «дал жизнь и отпустил».
+  if (!paused && sowBudget !== null && !sowingLocked) {
+    sowingLocked = true;
+    brush = false;
+    hud.applyBrush(false);
+    hud.setBudget(null);
+    hud.toast('Жребий брошен. Дальше мир растёт сам.');
+  }
+  return paused;
 }
 
 // ---- Управление видом: колесо, перетаскивание, пинч ----
@@ -347,8 +414,7 @@ window.addEventListener('keydown', (e) => {
   switch (e.code) {
     case 'Space':
       e.preventDefault();
-      paused = !paused;
-      hud.applyPause(paused);
+      hud.applyPause(togglePause());
       break;
     case 'Digit1':
       if (lenses.select(1)) hud.markLens(1);
@@ -398,6 +464,10 @@ function frame(now: number): void {
     if (stage === 'crisis') hud.toast('Нейкос приближается. Шторм начался.');
     if (stage === 'aftermath') hud.toast('Шторм прошёл. Мир считает выживших.');
     lastStage = STAGE_NAMES[stage];
+  }
+  if (running) {
+    const q = pickQuote(stage, world.tick);
+    hud.setQuote(q.text, q.source);
   }
 
   const f = forecaster.latest;
