@@ -2,6 +2,7 @@
  * platform/storage — локальные сохранения: рекорд и последний выбор старта.
  */
 import type { ArchetypeId, BiomeId, RunMode } from '../run/setup';
+import { cloudMirror } from './telegram';
 
 const BEST_KEY = 'monas.best';
 const SETUP_KEY = 'monas.setup';
@@ -30,6 +31,29 @@ export function saveBest(score: number): boolean {
   } catch {
     /* приватный режим — живём без памяти */
   }
+  cloudMirror(BEST_KEY, String(score));
+  return true;
+}
+
+/** Лучший счёт Мира недели (по его seed). */
+const WEEK_KEY = 'monas.week';
+
+export function loadWeeklyBest(seedText: string): number {
+  try {
+    return Number(localStorage.getItem(`${WEEK_KEY}.${seedText}`)) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function saveWeeklyBest(seedText: string, score: number): boolean {
+  if (score <= loadWeeklyBest(seedText)) return false;
+  try {
+    localStorage.setItem(`${WEEK_KEY}.${seedText}`, String(score));
+  } catch {
+    /* ок */
+  }
+  cloudMirror(`${WEEK_KEY}.${seedText}`, String(score));
   return true;
 }
 

@@ -18,7 +18,8 @@ import { writeChronicle, type Milestones } from './run/chronicle';
 import { decideEnding } from './run/endings';
 import { computeScore } from './run/score';
 import { detectKnownForms, PATTERNS } from './phi/patterns';
-import { discoverForm, saveTrialStars } from './platform/storage';
+import { discoverForm, loadWeeklyBest, saveTrialStars, saveWeeklyBest } from './platform/storage';
+import { currentWeekly } from './run/weekly';
 import { ReplayPlayer, ReplayRecorder, decodeReplay, meNums, type ReplayData } from './run/replay';
 import { makeRun, type RunConfig } from './run/setup';
 import { trialById, trialStars } from './run/trials';
@@ -315,6 +316,10 @@ function finishRun(): void {
   });
 
   const isRecord = player ? false : saveBest(score);
+  // Мир недели: свой зачёт до понедельника.
+  if (!player && cfg.seedText === currentWeekly().seedText) {
+    if (saveWeeklyBest(cfg.seedText, score)) hud.toast('Лучший результат недели!');
+  }
   const chronicle = writeChronicle(milestones, ending, cfg);
 
   // Испытание: оценка цели и звёзды.
@@ -449,6 +454,14 @@ function showStart(): void {
       return true;
     },
     () => codex.show(),
+    {
+      label: `Мир недели «${currentWeekly().seedText}»`,
+      best: loadWeeklyBest(currentWeekly().seedText),
+      onPlay() {
+        const w = currentWeekly();
+        startRun(w.seedText, w.biome, w.archetype, w.size, 'flow');
+      },
+    },
   );
 }
 

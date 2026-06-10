@@ -53,6 +53,7 @@ export class Screens {
     onStart: (choice: StartChoice) => void,
     onReplay?: (code: string) => boolean,
     onCodex?: () => void,
+    weekly?: { label: string; best: number; onPlay: () => void },
   ): void {
     this.el.innerHTML = '';
     this.el.classList.add('show');
@@ -156,13 +157,28 @@ export class Screens {
     });
     panel.append(start);
 
+    const extras = document.createElement('div');
+    extras.className = 'sharerow';
+    if (weekly) {
+      const weekBtn = document.createElement('button');
+      weekBtn.textContent =
+        weekly.best > 0
+          ? `🌍 ${weekly.label} · лучший ${weekly.best}`
+          : `🌍 ${weekly.label}`;
+      weekBtn.title = 'Мир недели: один seed на всех до понедельника';
+      weekBtn.addEventListener('click', () => {
+        this.hide();
+        weekly.onPlay();
+      });
+      extras.append(weekBtn);
+    }
     if (onCodex) {
       const codexBtn = document.createElement('button');
-      codexBtn.className = 'codexbtn';
       codexBtn.textContent = '✦ Кодекс форм';
       codexBtn.addEventListener('click', onCodex);
-      panel.append(codexBtn);
+      extras.append(codexBtn);
     }
+    if (extras.childElementCount > 0) panel.append(extras);
 
     // Чужой мир: вставь код реплея — и история повторится у тебя.
     if (onReplay) {
