@@ -30,6 +30,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Golden-реплеи: детерминизм движка обязан пережить каждый коммит.
+      - run: npm run test:golden
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
