@@ -17,7 +17,9 @@ import { initTelegram } from './platform/telegram';
 import { writeChronicle, type Milestones } from './run/chronicle';
 import { decideEnding } from './run/endings';
 import { computeScore } from './run/score';
+import { ReplayPlayer, ReplayRecorder, decodeReplay, meNums, type ReplayData } from './run/replay';
 import { SOWER_BUDGET, makeRun, type RunConfig } from './run/setup';
+import { downloadChroniclePng } from './ui/chronicleImage';
 import {
   STAGE_NAMES, SURVIVAL_THRESHOLD, currentStage, endTick, firstThreatTick, lastThreatEnd,
 } from './run/stages';
@@ -63,6 +65,8 @@ const lenses = new LensSwitcher();
 const forecaster = new Forecaster();
 const tabletEngine = new TabletEngine();
 const sound = new SoundEngine();
+const recorder = new ReplayRecorder();
+let player: ReplayPlayer | null = null;
 let clusters: Cluster[] = [];
 let report: PhiReport = computePhi([], 0);
 let lastForecastBase = -1;
@@ -140,9 +144,11 @@ function startRun(
   archetype: RunConfig['archetype'],
   size: number,
   mode: RunConfig['mode'],
+  replay: ReplayData | null = null,
 ): void {
   cfg = makeRun(seedText, biome, archetype, size, mode);
-  saveSetup({ biome, archetype, size, mode });
+  player = replay ? new ReplayPlayer(replay) : null;
+  if (!player) saveSetup({ biome, archetype, size, mode });
   setGridSize(cfg.size);
   renderer.rebuildGrid();
   me = { ...cfg.me };
@@ -181,17 +187,27 @@ function startRun(
   milestones.tabletsFired = [];
 
   // Эхо мира: новый мир восходит на прахе прежнего (если размеры совпали).
-  const echo = loadEcho(cfg.size);
-  if (echo && echo.length > 0) {
-    let laid = 0;
-    for (const i of echo) {
-      if (i >= 0 && i < world.cells.length && world.cells[i] === Cell.Empty) {
-        world.cells[i] = Cell.Ash;
-        world.age[i] = 0;
-        laid++;
-      }
+  // Реплей несёт своё эхо — иначе чужая история не совпадёт с нашей.
+  const echo = player ? player.data.echo : (loadEcho(cfg.size) ?? []);
+  let laid = 0;
+  for (const i of echo) {
+    if (i >= 0 && i < world.cells.length && world.cells[i] === Cell.Empty) {
+      world.cells[i] = Cell.Ash;
+      world.age[i] = 0;
+      laid++;
     }
-    if (laid > 0) hud.toast('Этот мир восходит на прахе прежнего.');
+  }
+  if (laid > 0 && !player) hud.toast('Этот мир восходит на прахе прежнего.');
+
+  recorder.start(
+    { seedText: cfg.seedText, biome: cfg.biome, archetype: cfg.archetype, size: cfg.size, mode: cfg.mode },
+    echo,
+  );
+  if (player) {
+    paused = false;
+    brush = false;
+    sowBudget = null;
+    hud.toast('Чужой мир. Смотри, как творил другой, — руки убраны.');
   }
 
   hud.markLens(1);
@@ -228,11 +244,14 @@ function finishRun(): void {
   sound.event('end');
 
   // Эхо мира: запомнить отпечаток последней жизни для следующего творения.
-  const imprint: number[] = [];
-  for (let i = 0; i < world.cells.length; i++) {
-    if (world.cells[i] === Cell.Seed) imprint.push(i);
+  // Чужая история не оставляет праха в нашем мире.
+  if (!player) {
+    const imprint: number[] = [];
+    for (let i = 0; i < world.cells.length; i++) {
+      if (world.cells[i] === Cell.Seed) imprint.push(i);
+    }
+    saveEcho(cfg.size, imprint);
   }
-  saveEcho(cfg.size, imprint);
 
   milestones.finalTick = world.tick;
   milestones.finalPhi = report.phi;
@@ -261,12 +280,23 @@ function finishRun(): void {
     sower: cfg.mode === 'sower',
   });
 
-  const isRecord = saveBest(score);
+  const isRecord = player ? false : saveBest(score);
   const chronicle = writeChronicle(milestones, ending, cfg);
 
   screens.showFinal(
     { ending, score, best: Math.max(score, loadBest()), isRecord, chronicle, seedText: cfg.seedText },
-    showStart,
+    {
+      onRestart: showStart,
+      onExportPng: () =>
+        downloadChroniclePng(world, cfg.size, {
+          title: ending.title,
+          chronicle,
+          seedText: cfg.seedText,
+          score,
+          phi: report.phi,
+        }),
+      onCopyReplay: () => (player ? null : recorder.encode()),
+    },
   );
 }
 
@@ -286,10 +316,12 @@ const screens = new Screens();
 
 const hud = new Hud(me, {
   onMeChange(next) {
+    if (player) return; // в чужом мире законы чужие
     // Поля энергии и угрозы ползунками не трогаются — переносим из текущих Ме.
     me = { ...me, birthMin: next.birthMin, birthMax: next.birthMax,
       surviveMin: next.surviveMin, surviveMax: next.surviveMax, ashLifetime: next.ashLifetime };
     meEdits++;
+    recorder.record({ t: world.tick, k: 'me', me: meNums(me) });
     forecaster.invalidate();
     refreshForecast(true);
   },
@@ -324,9 +356,13 @@ const hud = new Hud(me, {
 
 const tabletUI = new TabletUI(document.getElementById('mepanel') as HTMLElement, tabletEngine, {
   onCarve(condition, action) {
+    if (player) return 'В чужом мире нельзя высекать.';
     const err = tabletEngine.carve(condition, action, world);
     if (err) hud.toast(err);
-    else hud.toast('Табличка высечена. Она спит и ждёт своего часа.');
+    else {
+      recorder.record({ t: world.tick, k: 'carve', c: condition, a: action });
+      hud.toast('Табличка высечена. Она спит и ждёт своего часа.');
+    }
     return err;
   },
 });
@@ -342,23 +378,37 @@ function showStart(): void {
     },
     loadBest(),
     (choice) => startRun(choice.seedText, choice.biome, choice.archetype, choice.size, choice.mode),
+    (code) => {
+      const data = decodeReplay(code);
+      if (!data) return false;
+      startRun(data.cfg.seedText, data.cfg.biome, data.cfg.archetype, data.cfg.size, data.cfg.mode, data);
+      return true;
+    },
   );
 }
 
 // ---- Кисть посева ----
 
+/** Посадить одно Семя; единая точка мутации для руки и для реплея. */
+function setSeed(i: number, strain: number): boolean {
+  if (i < 0 || i >= world.cells.length || world.cells[i] === Cell.Seed) return false;
+  world.cells[i] = Cell.Seed;
+  world.age[i] = 0;
+  world.kind[i] = strain;
+  return true;
+}
+
 function sowAt(cssX: number, cssY: number): void {
+  if (player) return; // в чужом мире руки убраны
   const c = renderer.cellAt(cssX, cssY);
   if (!c) return;
 
   // Сеятель: по одному Семени из горсти, после пуска времени — рука убрана.
   if (sowBudget !== null) {
-    if (sowingLocked) return;
+    if (sowingLocked || sowBudget <= 0) return;
     const i = c.y * GRID_W + c.x;
-    if (sowBudget <= 0 || world.cells[i] === Cell.Seed) return;
-    world.cells[i] = Cell.Seed;
-    world.age[i] = 0;
-    world.kind[i] = brushStrain;
+    if (!setSeed(i, brushStrain)) return;
+    recorder.record({ t: world.tick, k: 'sow', i, s: brushStrain });
     sowBudget--;
     hud.setBudget(sowBudget);
     sound.event('sow');
@@ -371,14 +421,31 @@ function sowAt(cssX: number, cssY: number): void {
     const x = (c.x + dx + GRID_W) % GRID_W;
     const y = (c.y + dy + GRID_H) % GRID_H;
     const i = y * GRID_W + x;
-    if (world.cells[i] !== Cell.Seed) {
-      world.cells[i] = Cell.Seed;
-      world.age[i] = 0;
-      world.kind[i] = brushStrain;
+    if (setSeed(i, brushStrain)) {
+      recorder.record({ t: world.tick, k: 'sow', i, s: brushStrain });
     }
   }
   forecaster.invalidate();
   refreshForecast(true);
+}
+
+/** Воспроизведение: применить вмешательства, чей тик настал. */
+function applyReplayEvents(): void {
+  if (!player) return;
+  for (const ev of player.due(world.tick)) {
+    switch (ev.k) {
+      case 'me':
+        me = { ...me, ...ev.me };
+        break;
+      case 'sow':
+        setSeed(ev.i, ev.s);
+        break;
+      case 'carve':
+        tabletEngine.carve(ev.c, ev.a, world);
+        tabletUI.refresh();
+        break;
+    }
+  }
 }
 
 function togglePause(): boolean {
@@ -501,6 +568,7 @@ function frame(now: number): void {
   if (running && !paused) {
     const stepMs = TICK_MS / (SPEEDS[speedIdx] as number);
     while (accumulator >= stepMs && running) {
+      applyReplayEvents();
       world = tick(world, me);
       measure();
       checkEnd();

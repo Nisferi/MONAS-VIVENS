@@ -24,6 +24,14 @@ export interface FinalData {
   seedText: string;
 }
 
+export interface FinalCallbacks {
+  onRestart(): void;
+  /** Скачать летопись картинкой. */
+  onExportPng(): void;
+  /** Вернуть код реплея для буфера (null — нет записи). */
+  onCopyReplay(): string | null;
+}
+
 export class Screens {
   private readonly el: HTMLElement;
 
@@ -37,6 +45,7 @@ export class Screens {
     defaults: { biome: BiomeId; archetype: ArchetypeId; size: number; mode: RunMode },
     best: number,
     onStart: (choice: StartChoice) => void,
+    onReplay?: (code: string) => boolean,
   ): void {
     this.el.innerHTML = '';
     this.el.classList.add('show');
@@ -107,10 +116,27 @@ export class Screens {
     });
     panel.append(start);
 
+    // Чужой мир: вставь код реплея — и история повторится у тебя.
+    if (onReplay) {
+      const repRow = document.createElement('div');
+      repRow.className = 'seedrow';
+      const repInput = document.createElement('input');
+      repInput.type = 'text';
+      repInput.placeholder = 'код реплея (MONAS1:…)';
+      const repBtn = document.createElement('button');
+      repBtn.textContent = '▶ Чужой мир';
+      repBtn.addEventListener('click', () => {
+        if (onReplay(repInput.value)) this.hide();
+        else repInput.value = 'код не прочитан';
+      });
+      repRow.append(repInput, repBtn);
+      panel.append(repRow);
+    }
+
     this.el.append(panel);
   }
 
-  showFinal(data: FinalData, onRestart: () => void): void {
+  showFinal(data: FinalData, cb: FinalCallbacks): void {
     this.el.innerHTML = '';
     this.el.classList.add('show');
 
@@ -139,10 +165,29 @@ export class Screens {
     again.textContent = 'Новый мир';
     again.addEventListener('click', () => {
       this.hide();
-      onRestart();
+      cb.onRestart();
     });
 
-    panel.append(h, score, chron, seed, again);
+    const share = document.createElement('div');
+    share.className = 'sharerow';
+    const png = document.createElement('button');
+    png.textContent = '🜍 Летопись (PNG)';
+    png.addEventListener('click', () => cb.onExportPng());
+    const rep = document.createElement('button');
+    rep.textContent = '⧉ Реплей';
+    rep.addEventListener('click', () => {
+      const code = cb.onCopyReplay();
+      if (!code) return;
+      void navigator.clipboard?.writeText(code).then(
+        () => (rep.textContent = '⧉ Скопирован!'),
+        () => {
+          window.prompt('Код реплея — скопируй вручную:', code);
+        },
+      );
+    });
+    share.append(png, rep);
+
+    panel.append(h, score, chron, seed, share, again);
     this.el.append(panel);
   }
 
