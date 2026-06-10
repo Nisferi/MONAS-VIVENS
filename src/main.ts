@@ -146,12 +146,19 @@ function horizonNow(): number {
   return Math.round(horizonTicks(report.phi) * cfg.horizonScale);
 }
 
+let aliveCount = 0;
+
 function measure(): void {
   clusters = tracker.update(world);
   const neikos = neikosMeter.update(tracker.events);
   report = computePhi(clusters, neikos);
 
   phiIntegral += report.phi;
+
+  aliveCount = 0;
+  for (let i = 0; i < world.cells.length; i++) {
+    if (world.cells[i] === Cell.Seed) aliveCount++;
+  }
 
   // Хроника: место помнит каждый тик прожитой на нём жизни.
   if (heat.length === world.cells.length) {
@@ -185,8 +192,8 @@ function measure(): void {
     aftermathNeikosN++;
   }
 
-  // Эволюция (Ярус 3): после каждого шторма — отчёт о дрейфе осторожности родов.
-  reportGeneDrift();
+  // Эволюция (Ярус 3): отчёт о дрейфе осторожности — скан раз в 10 тиков.
+  if (world.tick % 10 === 0) reportGeneDrift();
 
   // Таблички: спящие правила проверяются каждый тик.
   for (const msg of tabletEngine.update(world, clusters, report, me)) {
@@ -540,12 +547,9 @@ function startBreath(): void {
   hud.toast('Дыхание: 10 минут наблюдения. Мир дышит с тобой — руки не нужны.');
 }
 
+/** Живые Семена считаются один раз за тик в measure(). */
 function aliveSeeds(): number {
-  let n = 0;
-  for (let i = 0; i < world.cells.length; i++) {
-    if (world.cells[i] === Cell.Seed) n++;
-  }
-  return n;
+  return aliveCount;
 }
 
 function finishRun(): void {

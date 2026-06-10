@@ -75,6 +75,7 @@ export class Hud {
   private phiHistory: number[] = [];
   private lastTick = 0;
   private lastStatsBottom = 0;
+  private lastStatsSig = '';
 
   private statsEl!: HTMLElement;
 
@@ -428,13 +429,18 @@ export class Hud {
       this.quoteEl.style.top = `${statsBottom + 8}px`;
       this.toastEl.style.top = `${statsBottom + 8}px`;
     }
-    this.phiEl.textContent = `Φ ${report.phi.toFixed(1)}`;
-    this.energyEl.textContent = `⚡ ${Math.round(state.energy)}`;
-    this.energyEl.classList.toggle('low', state.energy < 25);
-    this.stageEl.textContent = stage;
-    this.tickEl.textContent = `Тик ${state.tick}`;
-    this.seedsEl.textContent = `Семена ${seeds}`;
-    this.horizonEl.textContent = horizon === null ? '' : `Взор +${horizon}`;
+    // DOM пишем только при изменении — текстовые узлы дороги на телефоне.
+    const sig = `${report.phi.toFixed(1)}|${Math.round(state.energy)}|${stage}|${state.tick}|${seeds}|${horizon}`;
+    if (sig !== this.lastStatsSig) {
+      this.lastStatsSig = sig;
+      this.phiEl.textContent = `Φ ${report.phi.toFixed(1)}`;
+      this.energyEl.textContent = `⚡ ${Math.round(state.energy)}`;
+      this.energyEl.classList.toggle('low', state.energy < 25);
+      this.stageEl.textContent = stage;
+      this.tickEl.textContent = `Тик ${state.tick}`;
+      this.seedsEl.textContent = `Семена ${seeds}`;
+      this.horizonEl.textContent = horizon === null ? '' : `Взор +${horizon}`;
+    }
 
     const f = (v: number) => v.toFixed(2);
     this.breakdownEl.textContent =

@@ -35,6 +35,8 @@ export class FieldRenderer {
   private readonly futureCtx: CanvasRenderingContext2D;
   private futureImage: ImageData;
   private hasFuture = false;
+  private lastFutureCells: Uint8Array | null = null;
+  private lastAltCells: Uint8Array | null = null;
   private readonly altCanvas: HTMLCanvasElement;
   private readonly altCtx: CanvasRenderingContext2D;
   private altImage: ImageData;
@@ -187,7 +189,8 @@ export class FieldRenderer {
 
   /** Обновить призрак будущего (или скрыть его, передав null). */
   setFuture(cells: Uint8Array | null): void {
-    if (!cells && !this.hasFuture) return;
+    if (cells === this.lastFutureCells) return; // тот же кадр прогноза — не перерисовываем
+    this.lastFutureCells = cells;
     this.version++;
     if (cells) {
       paintFutureGhost(this.futureCtx, this.futureImage, cells, activeTheme.ghost);
@@ -199,7 +202,8 @@ export class FieldRenderer {
 
   /** Веер будущих: лиловый призрак старого закона. */
   setFutureAlt(cells: Uint8Array | null): void {
-    if (!cells && !this.hasAlt) return;
+    if (cells === this.lastAltCells) return;
+    this.lastAltCells = cells;
     this.version++;
     if (cells) {
       paintFutureGhost(this.altCtx, this.altImage, cells, activeTheme.ghostAlt);
