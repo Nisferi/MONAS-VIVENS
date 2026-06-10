@@ -60,6 +60,10 @@ export interface RunConfig {
   mindPhi: number;
   /** Множитель дальности взора. */
   horizonScale: number;
+  /** Семян в горсти Сеятеля. */
+  sowBudget: number;
+  /** Испытание, если партия — паззл. */
+  trialId: string | null;
 }
 
 export function makeRun(
@@ -120,5 +124,7 @@ export function makeRun(
   return {
     seedText, seed, biome, archetype, mode, size,
     me, density, startEnergy, mindPhi, horizonScale,
+    sowBudget: SOWER_BUDGET,
+    trialId: null,
   };
 }

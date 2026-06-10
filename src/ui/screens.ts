@@ -5,6 +5,8 @@ import {
   ARCHETYPES, BIOMES, FIELD_SIZES, SOWER_BUDGET,
   type ArchetypeId, type BiomeId, type RunMode,
 } from '../run/setup';
+import { TRIALS } from '../run/trials';
+import { loadTrialStars } from '../platform/storage';
 import type { Ending } from '../run/endings';
 
 export interface StartChoice {
@@ -13,6 +15,8 @@ export interface StartChoice {
   seedText: string;
   size: number;
   mode: RunMode;
+  /** Выбранное испытание (путь «Испытание»). */
+  trialId: string | null;
 }
 
 export interface FinalData {
@@ -22,6 +26,8 @@ export interface FinalData {
   isRecord: boolean;
   chronicle: string;
   seedText: string;
+  /** Итог испытания («★★ Сад из горсти»), если партия была паззлом. */
+  trialResult?: string;
 }
 
 export interface FinalCallbacks {
@@ -46,6 +52,7 @@ export class Screens {
     best: number,
     onStart: (choice: StartChoice) => void,
     onReplay?: (code: string) => boolean,
+    onCodex?: () => void,
   ): void {
     this.el.innerHTML = '';
     this.el.classList.add('show');
@@ -71,6 +78,15 @@ export class Screens {
     let archetype = defaults.archetype;
     let size = defaults.size;
     let mode = defaults.mode;
+    let path: 'flow' | 'sower' | 'trial' = mode;
+    let trialId = TRIALS[0]?.id ?? '';
+
+    const worldGroups = document.createElement('div');
+    const trialGroup = document.createElement('div');
+    const syncPath = () => {
+      worldGroups.style.display = path === 'trial' ? 'none' : '';
+      trialGroup.style.display = path === 'trial' ? '' : 'none';
+    };
 
     panel.append(
       this.chipGroup(
@@ -78,16 +94,20 @@ export class Screens {
         [
           { id: 'flow', name: 'Поток', desc: 'мир рождается из первичного бульона' },
           { id: 'sower', name: 'Сеятель', desc: `пустой мир и ${SOWER_BUDGET} Семян в горсти` },
+          { id: 'trial', name: 'Испытание', desc: 'паззлы Сеятеля с целью и звёздами' },
         ],
-        mode,
-        (id) => (mode = id as RunMode),
+        path,
+        (id) => {
+          path = id as typeof path;
+          if (path !== 'trial') mode = path;
+          syncPath();
+        },
       ),
     );
-    panel.append(this.chipGroup('Место мира', BIOMES, biome, (id) => (biome = id as BiomeId)));
-    panel.append(
+
+    worldGroups.append(
+      this.chipGroup('Место мира', BIOMES, biome, (id) => (biome = id as BiomeId)),
       this.chipGroup('Первое Семя', ARCHETYPES, archetype, (id) => (archetype = id as ArchetypeId)),
-    );
-    panel.append(
       this.chipGroup(
         'Простор',
         FIELD_SIZES.map((f) => ({ id: String(f.side), name: f.name, desc: f.desc })),
@@ -95,6 +115,23 @@ export class Screens {
         (id) => (size = Number(id)),
       ),
     );
+    panel.append(worldGroups);
+
+    const stars = loadTrialStars();
+    trialGroup.append(
+      this.chipGroup(
+        'Испытания',
+        TRIALS.map((t) => ({
+          id: t.id,
+          name: `${t.name} ${'★'.repeat(stars[t.id] ?? 0) || '☆'}`,
+          desc: t.desc,
+        })),
+        trialId,
+        (id) => (trialId = id),
+      ),
+    );
+    panel.append(trialGroup);
+    syncPath();
 
     const seedRow = document.createElement('div');
     seedRow.className = 'seedrow';
@@ -112,9 +149,20 @@ export class Screens {
     start.addEventListener('click', () => {
       const seedText = seedInput.value.trim() || String(Date.now() % 1000000);
       this.hide();
-      onStart({ biome, archetype, seedText, size, mode });
+      onStart({
+        biome, archetype, seedText, size, mode,
+        trialId: path === 'trial' ? trialId : null,
+      });
     });
     panel.append(start);
+
+    if (onCodex) {
+      const codexBtn = document.createElement('button');
+      codexBtn.className = 'codexbtn';
+      codexBtn.textContent = '✦ Кодекс форм';
+      codexBtn.addEventListener('click', onCodex);
+      panel.append(codexBtn);
+    }
 
     // Чужой мир: вставь код реплея — и история повторится у тебя.
     if (onReplay) {
@@ -152,6 +200,13 @@ export class Screens {
       ? `Счёт: ${data.score} — новый рекорд!`
       : `Счёт: ${data.score} (лучший: ${data.best})`;
 
+    let trialEl: HTMLElement | null = null;
+    if (data.trialResult) {
+      trialEl = document.createElement('p');
+      trialEl.className = 'best';
+      trialEl.textContent = data.trialResult;
+    }
+
     const chron = document.createElement('pre');
     chron.className = 'chronicle';
     chron.textContent = data.chronicle;
@@ -187,7 +242,9 @@ export class Screens {
     });
     share.append(png, rep);
 
-    panel.append(h, score, chron, seed, share, again);
+    panel.append(h);
+    if (trialEl) panel.append(trialEl);
+    panel.append(score, chron, seed, share, again);
     this.el.append(panel);
   }
 

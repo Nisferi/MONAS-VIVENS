@@ -64,6 +64,54 @@ export function saveEcho(size: number, indices: number[]): void {
   }
 }
 
+/** Кодекс форм: какие существа уже открыты. */
+const CODEX_KEY = 'monas.codex';
+
+export function loadCodex(): Record<string, true> {
+  try {
+    const raw = localStorage.getItem(CODEX_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, true>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Возвращает true, если форма открыта впервые. */
+export function discoverForm(id: string): boolean {
+  const codex = loadCodex();
+  if (codex[id]) return false;
+  codex[id] = true;
+  try {
+    localStorage.setItem(CODEX_KEY, JSON.stringify(codex));
+  } catch {
+    /* ок */
+  }
+  return true;
+}
+
+/** Звёзды испытаний (хранится лучший результат). */
+const TRIALS_KEY = 'monas.trials';
+
+export function loadTrialStars(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(TRIALS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveTrialStars(id: string, stars: number): void {
+  const all = loadTrialStars();
+  if ((all[id] ?? 0) >= stars) return;
+  all[id] = stars;
+  try {
+    localStorage.setItem(TRIALS_KEY, JSON.stringify(all));
+  } catch {
+    /* ок */
+  }
+}
+
 export function loadEcho(size: number): number[] | null {
   try {
     const raw = localStorage.getItem(`${ECHO_KEY}.${size}`);

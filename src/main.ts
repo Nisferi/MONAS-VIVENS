@@ -17,9 +17,13 @@ import { initTelegram } from './platform/telegram';
 import { writeChronicle, type Milestones } from './run/chronicle';
 import { decideEnding } from './run/endings';
 import { computeScore } from './run/score';
+import { detectKnownForms, PATTERNS } from './phi/patterns';
+import { discoverForm, saveTrialStars } from './platform/storage';
 import { ReplayPlayer, ReplayRecorder, decodeReplay, meNums, type ReplayData } from './run/replay';
-import { SOWER_BUDGET, makeRun, type RunConfig } from './run/setup';
+import { makeRun, type RunConfig } from './run/setup';
+import { trialById, trialStars } from './run/trials';
 import { downloadChroniclePng } from './ui/chronicleImage';
+import { CodexScreen } from './ui/codex';
 import {
   STAGE_NAMES, SURVIVAL_THRESHOLD, currentStage, endTick, firstThreatTick, lastThreatEnd,
 } from './run/stages';
@@ -130,6 +134,19 @@ function measure(): void {
     forecaster.invalidate();
     sound.event('tablet');
   }
+
+  // Кодекс: раз в 25 тиков мир осматривается на знакомые существа.
+  if (world.tick % 25 === 0) {
+    for (const id of detectKnownForms(world, clusters)) {
+      if (discoverForm(id)) {
+        const p = PATTERNS.find((x) => x.id === id);
+        if (p) {
+          hud.toast(`В Кодекс внесена форма: «${p.name}».`);
+          sound.event('form');
+        }
+      }
+    }
+  }
 }
 
 function refreshForecast(force = false): void {
@@ -149,10 +166,22 @@ function startRun(
   size: number,
   mode: RunConfig['mode'],
   replay: ReplayData | null = null,
+  trialId: string | null = null,
 ): void {
   cfg = makeRun(seedText, biome, archetype, size, mode);
+  // Испытание: фиксированный паззл Сеятеля поверх обычного конфига.
+  if (trialId) {
+    const trial = trialById(trialId);
+    if (trial) {
+      cfg = {
+        ...makeRun(trial.seedText, trial.biome, trial.archetype, trial.size, 'sower'),
+        sowBudget: trial.budget,
+        trialId: trial.id,
+      };
+    }
+  }
   player = replay ? new ReplayPlayer(replay) : null;
-  if (!player) saveSetup({ biome, archetype, size, mode });
+  if (!player && !trialId) saveSetup({ biome, archetype, size, mode });
   setGridSize(cfg.size);
   renderer.rebuildGrid();
   me = { ...cfg.me };
@@ -174,7 +203,7 @@ function startRun(
 
   // Сеятель: время стоит, в горсти — Семена, кисть уже в руке.
   if (cfg.mode === 'sower') {
-    sowBudget = SOWER_BUDGET;
+    sowBudget = cfg.sowBudget;
     sowingLocked = false;
     brush = true;
     paused = true;
@@ -229,7 +258,7 @@ function startRun(
   running = true;
   hud.toast(
     cfg.mode === 'sower'
-      ? `В твоей горсти ${SOWER_BUDGET} Семян. Расставь их — и пусти время (⏸).`
+      ? `В твоей горсти ${cfg.sowBudget} Семян. Расставь их — и пусти время (⏸).`
       : 'Мир сотворён. Начертай Ме — и жди, когда форма устоит.',
   );
 }
@@ -287,8 +316,26 @@ function finishRun(): void {
   const isRecord = player ? false : saveBest(score);
   const chronicle = writeChronicle(milestones, ending, cfg);
 
+  // Испытание: оценка цели и звёзды.
+  let trialResult: string | undefined;
+  if (cfg.trialId) {
+    const trial = trialById(cfg.trialId);
+    if (trial) {
+      const stars = trialStars(trial, report.phi, survived, tabletEngine.carvedCount);
+      if (!player && stars > 0) saveTrialStars(trial.id, stars);
+      trialResult =
+        stars > 0
+          ? `Испытание «${trial.name}»: ${'★'.repeat(stars)}`
+          : `Испытание «${trial.name}» не пройдено: Φ ${report.phi.toFixed(1)} из ${trial.goalPhi}`;
+    }
+  }
+
   screens.showFinal(
-    { ending, score, best: Math.max(score, loadBest()), isRecord, chronicle, seedText: cfg.seedText },
+    {
+      ending, score, best: Math.max(score, loadBest()), isRecord, chronicle,
+      seedText: cfg.seedText,
+      ...(trialResult !== undefined ? { trialResult } : {}),
+    },
     {
       onRestart: showStart,
       onExportPng: () =>
@@ -317,6 +364,7 @@ function checkEnd(): void {
 
 const renderer = new FieldRenderer(canvas);
 const screens = new Screens();
+const codex = new CodexScreen();
 
 const hud = new Hud(me, {
   onMeChange(next) {
@@ -388,13 +436,15 @@ function showStart(): void {
       mode: saved?.mode ?? 'flow',
     },
     loadBest(),
-    (choice) => startRun(choice.seedText, choice.biome, choice.archetype, choice.size, choice.mode),
+    (choice) =>
+      startRun(choice.seedText, choice.biome, choice.archetype, choice.size, choice.mode, null, choice.trialId),
     (code) => {
       const data = decodeReplay(code);
       if (!data) return false;
       startRun(data.cfg.seedText, data.cfg.biome, data.cfg.archetype, data.cfg.size, data.cfg.mode, data);
       return true;
     },
+    () => codex.show(),
   );
 }
 
