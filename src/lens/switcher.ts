@@ -6,10 +6,12 @@
 import { MIN_FORM_SIZE, type Cluster } from '../phi/clusters';
 import { STABLE_AGE } from '../phi/mnemosyne';
 
-export type LensId = 1 | 2 | 3 | 4;
+export type LensId = 1 | 2 | 3 | 4 | 5;
 
 /** Порог Φ, за которым просыпается разум (архетип Эхо снижает его). */
 export const MIND_PHI = 25;
+/** Порог Φ Яруса Химии: жизнь обрастает грибницей (линза Мицелия). */
+export const CHEM_PHI = 15;
 /** Возраст мира, с которого у него есть история (линза Хроники). */
 export const HISTORY_TICK = 400;
 
@@ -18,6 +20,7 @@ export class LensSwitcher {
   unlocked2 = false;
   unlocked3 = false;
   unlocked4 = false;
+  unlocked5 = false;
   mindPhi = MIND_PHI;
 
   /** Проверяет условия открытия; возвращает текст события или null. */
@@ -28,6 +31,10 @@ export class LensSwitcher {
         this.unlocked2 = true;
         return 'Форма устояла. Открылась линза Филии.';
       }
+    }
+    if (!this.unlocked5 && phi >= CHEM_PHI) {
+      this.unlocked5 = true;
+      return 'Жизнь обросла грибницей. Открылась линза Мицелия — видна химия.';
     }
     if (this.unlocked2 && !this.unlocked3 && phi >= this.mindPhi) {
       this.unlocked3 = true;
@@ -45,6 +52,7 @@ export class LensSwitcher {
     if (lens === 2 && !this.unlocked2) return false;
     if (lens === 3 && !this.unlocked3) return false;
     if (lens === 4 && !this.unlocked4) return false;
+    if (lens === 5 && !this.unlocked5) return false;
     this.current = lens;
     return true;
   }
@@ -54,5 +62,6 @@ export class LensSwitcher {
     this.unlocked2 = false;
     this.unlocked3 = false;
     this.unlocked4 = false;
+    this.unlocked5 = false;
   }
 }

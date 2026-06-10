@@ -42,15 +42,16 @@ export class Forecaster {
     const age = state.age.slice();
     const kind = state.kind.slice();
     const terrain = state.terrain.slice();
+    const signal = state.signal.slice();
     this.worker.postMessage(
       {
-        cells, age, kind, terrain,
+        cells, age, kind, terrain, signal,
         baseTick: state.tick,
         energy: state.energy,
         me, steps,
         frames: FORECAST_FRAMES,
       },
-      [cells.buffer, age.buffer, kind.buffer, terrain.buffer],
+      [cells.buffer, age.buffer, kind.buffer, terrain.buffer, signal.buffer],
     );
     return true;
   }

@@ -63,6 +63,8 @@ export interface WorldState {
   kind: Uint8Array;
   /** Рельеф (Terrain): вечен, не меняется тиками — клонируется ссылкой. */
   terrain: Uint8Array;
+  /** Сигнальное поле — «грибница»: химия стресса/присутствия (Ярус 1 разума). */
+  signal: Float32Array;
   /** Энергия поля, 0..100. Часть детерминированного состояния — прогноз её видит. */
   energy: number;
 }
@@ -83,7 +85,15 @@ export function createWorld(
       kind[i] = Math.floor(rng() * STRAINS);
     }
   }
-  return { tick: 0, cells, age: new Uint16Array(GRID_SIZE), kind, terrain: land, energy };
+  return {
+    tick: 0,
+    cells,
+    age: new Uint16Array(GRID_SIZE),
+    kind,
+    terrain: land,
+    signal: new Float32Array(GRID_SIZE),
+    energy,
+  };
 }
 
 export function cloneWorld(state: WorldState): WorldState {
@@ -93,6 +103,7 @@ export function cloneWorld(state: WorldState): WorldState {
     age: state.age.slice(),
     kind: state.kind.slice(),
     terrain: state.terrain, // рельеф вечен — общая ссылка
+    signal: state.signal.slice(),
     energy: state.energy,
   };
 }
@@ -128,6 +139,8 @@ export function deserializeWorld(json: string): WorldState {
     age: Uint16Array.from(raw.age),
     kind: raw.kind ? Uint8Array.from(raw.kind) : new Uint8Array(raw.cells.length),
     terrain: raw.terrain ? Uint8Array.from(raw.terrain) : new Uint8Array(raw.cells.length),
+    // Сигнальное поле не сохраняем — оно отрастает заново за десяток тиков.
+    signal: new Float32Array(raw.cells.length),
     energy: raw.energy ?? 100,
   };
 }

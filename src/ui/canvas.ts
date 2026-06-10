@@ -12,6 +12,7 @@ import { activeTheme } from './themes';
 import { drawLens2 } from '../lens/lens2';
 import { drawLens3, paintFutureGhost } from '../lens/lens3';
 import { paintChronicle } from '../lens/lens4';
+import { paintMycelium } from '../lens/lens5';
 import type { LensId } from '../lens/switcher';
 import type { Cluster } from '../phi/clusters';
 
@@ -207,6 +208,7 @@ export class FieldRenderer {
     aim: { x: number; y: number; rgb: [number, number, number] } | null = null,
   ): void {
     if (lens === 4 && heat) paintChronicle(this.cellCtx, this.image, heat);
+    else if (lens === 5) paintMycelium(this.cellCtx, this.image, state.signal);
     else this.paintCells(state, prev, frac);
 
     const { ctx, canvas } = this;
@@ -219,8 +221,8 @@ export class FieldRenderer {
 
     ctx.imageSmoothingEnabled = false;
 
-    if (lens === 1 || lens === 4) {
-      // Линза 4 — Хроника: тепловая карта уже в cellCanvas.
+    if (lens === 1 || lens === 4 || lens === 5) {
+      // Линзы 4 (Хроника) и 5 (Мицелий): карта уже отрисована в cellCanvas.
       ctx.drawImage(this.cellCanvas, originX, originY, GRID_W * s, GRID_H * s);
       // При прицеливании сетка видна всегда — игрок думает, куда заложить Семя.
       if (lens === 1 && (s >= GRID_LINES_FROM || aim)) this.paintGrid(originX, originY, s);

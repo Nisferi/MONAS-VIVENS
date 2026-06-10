@@ -160,6 +160,7 @@ function measure(): void {
       sound.event('mind');
     }
     if (lenses.unlocked4) hud.setLensUnlocked(4, true);
+    if (lenses.unlocked5) hud.setLensUnlocked(5, true);
     hud.toast(unlockEvent);
   }
 
@@ -965,6 +966,9 @@ window.addEventListener('keydown', (e) => {
       break;
     case 'Digit4':
       if (lenses.select(4)) hud.markLens(4);
+      break;
+    case 'Digit5':
+      if (lenses.select(5)) hud.markLens(5);
       break;
     case 'Digit0':
       renderer.resetView();
