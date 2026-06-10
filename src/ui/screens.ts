@@ -62,6 +62,8 @@ export class Screens {
     onReplay?: (code: string) => boolean,
     onCodex?: () => void,
     weekly?: { label: string; best: number; onPlay: () => void },
+    hearth?: { label: string; onPlay: () => void },
+    breath?: { onPlay: () => void },
   ): void {
     this.el.innerHTML = '';
     this.el.classList.add('show');
@@ -223,6 +225,26 @@ export class Screens {
         weekly.onPlay();
       });
       extras.append(weekBtn);
+    }
+    if (hearth) {
+      const hearthBtn = document.createElement('button');
+      hearthBtn.textContent = `🔥 ${hearth.label}`;
+      hearthBtn.title = 'Очаг: мир живёт в реальном времени, даже когда вкладка закрыта';
+      hearthBtn.addEventListener('click', () => {
+        this.hide();
+        hearth.onPlay();
+      });
+      extras.append(hearthBtn);
+    }
+    if (breath) {
+      const breathBtn = document.createElement('button');
+      breathBtn.textContent = '☯ Дыхание';
+      breathBtn.title = '10 минут созерцания: мир дышит с тобой, руки убраны';
+      breathBtn.addEventListener('click', () => {
+        this.hide();
+        breath.onPlay();
+      });
+      extras.append(breathBtn);
     }
     if (onCodex) {
       const codexBtn = document.createElement('button');

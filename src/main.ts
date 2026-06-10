@@ -23,6 +23,10 @@ import { computeScore } from './run/score';
 import { detectKnownForms, PATTERNS } from './phi/patterns';
 import { discoverForm, loadLayoutBest, loadWeeklyBest, saveLayoutBest, saveTrialStars, saveWeeklyBest } from './platform/storage';
 import { currentWeekly } from './run/weekly';
+import {
+  HEARTH_TPS, clearHearth, elapsedTicks, eternalThreats, fmtAbsence,
+  loadHearth, packWorld, restoreWorld, saveHearth,
+} from './run/hearth';
 import { ReplayPlayer, ReplayRecorder, decodeDuel, decodeReplay, encodeDuel, meNums, type ReplayData } from './run/replay';
 import { makeRun, type RunConfig } from './run/setup';
 import { trialById, trialStars } from './run/trials';
@@ -79,6 +83,14 @@ let currentPiece: PieceKind = 's0';
 let activeLayout: Layout | null = null;
 /** Интеграл Φ за партию — счёт ставки «Расцвет». */
 let phiIntegral = 0;
+/** «Очаг»: вечный мир в реальном времени. */
+let hearthMode = false;
+let hearthCatchUp = 0;
+let lastHearthSave = 0;
+/** «Дыхание»: сессия созерцания — руки убраны, темп дышит. */
+let breathMode = false;
+let breathStartedAt = 0;
+const BREATH_SESSION_MS = 10 * 60 * 1000;
 
 const tracker = new ClusterTracker();
 const neikosMeter = new NeikosMeter();
@@ -201,6 +213,10 @@ function startRun(
   layoutPick: { id: string; stake: Stake } | null = null,
   echoOverride: number[] | null = null,
 ): void {
+  hearthMode = false;
+  hearthCatchUp = 0;
+  breathMode = false;
+  (document.getElementById('mepanel') as HTMLElement).style.display = '';
   cfg = makeRun(seedText, biome, archetype, size, mode);
   // Испытание: фиксированный паззл Сеятеля поверх обычного конфига.
   if (trialId) {
@@ -324,6 +340,60 @@ function startRun(
   );
 }
 
+function persistHearth(): void {
+  if (!hearthMode || !running) return;
+  saveHearth({
+    seedText: cfg.seedText,
+    biome: cfg.biome,
+    archetype: cfg.archetype,
+    size: cfg.size,
+    world: packWorld(world),
+    me,
+    tablets: tabletEngine.toJSON(),
+    savedAt: Date.now(),
+  });
+  lastHearthSave = performance.now();
+}
+
+function startHearth(): void {
+  const save = loadHearth();
+  hearthMode = false; // чтобы startRun не сохранил лишнего
+  if (save) {
+    startRun(save.seedText, save.biome, save.archetype, save.size, 'flow');
+    me = { ...save.me };
+    world = restoreWorld(save);
+    heat = new Float32Array(world.cells.length);
+    tracker.reset();
+    tabletEngine.fromJSON(save.tablets);
+    tabletUI.refresh();
+    hearthCatchUp = elapsedTicks(save);
+    hearthMode = true;
+    measure();
+    hud.toast(
+      hearthCatchUp > 0
+        ? `Очаг ждал тебя ${fmtAbsence(hearthCatchUp)}. Мир проживает это время…`
+        : 'Очаг тёплый. Мир продолжается.',
+    );
+  } else {
+    startRun(`очаг-${Date.now() % 1000000}`, 'swamp', 'clay', 64, 'flow');
+    me = { ...me, threats: eternalThreats(cfg.seed) };
+    hearthCatchUp = 0;
+    hearthMode = true;
+    hud.toast('Очаг разожжён. Этот мир живёт в реальном времени — даже без тебя.');
+  }
+  persistHearth();
+}
+
+function startBreath(): void {
+  startRun(`дыхание-${Date.now() % 1000000}`, 'swamp', 'clay', 64, 'flow');
+  breathMode = true;
+  breathStartedAt = performance.now();
+  brush = false;
+  hud.applyBrush(false);
+  (document.getElementById('mepanel') as HTMLElement).style.display = 'none';
+  hud.toast('Дыхание: 10 минут наблюдения. Мир дышит с тобой — руки не нужны.');
+}
+
 function aliveSeeds(): number {
   let n = 0;
   for (let i = 0; i < world.cells.length; i++) {
@@ -439,6 +509,14 @@ let lowAliveTicks = 0;
 function checkEnd(): void {
   const alive = aliveSeeds();
   lowAliveTicks = alive < 5 ? lowAliveTicks + 1 : 0;
+  if (hearthMode) {
+    // Очаг не кончается временем — только гибелью мира.
+    if (lowAliveTicks > 50) {
+      clearHearth();
+      finishRun();
+    }
+    return;
+  }
   if (world.tick >= endTick(me) || lowAliveTicks > 50) finishRun();
 }
 
@@ -450,7 +528,7 @@ const codex = new CodexScreen();
 
 const hud = new Hud(me, {
   onMeChange(next) {
-    if (player) return; // в чужом мире законы чужие
+    if (player || breathMode) return; // в чужом мире и в созерцании законы не трогают
     // Веер будущих: путь старого закона остаётся лиловой тенью на 6 секунд.
     const old = forecaster.latest;
     const lastFrame = old?.frames[old.frames.length - 1];
@@ -465,6 +543,15 @@ const hud = new Hud(me, {
   },
   onPauseToggle: () => togglePause(),
   onReseed() {
+    if (hearthMode && running) {
+      // Очаг не гасят — его оставляют тёплым.
+      persistHearth();
+      running = false;
+      hearthMode = false;
+      hud.toast('Очаг сохранён. Мир продолжит жить без тебя.');
+      showStart();
+      return;
+    }
     if (running) finishRun();
     else showStart();
   },
@@ -503,7 +590,7 @@ const hud = new Hud(me, {
 
 const tabletUI = new TabletUI(hud.tabletsPane, tabletEngine, {
   onCarve(condition, action) {
-    if (player) return 'В чужом мире нельзя высекать.';
+    if (player || breathMode) return 'Сейчас руки убраны.';
     const err = tabletEngine.carve(condition, action, world);
     if (err) hud.toast(err);
     else {
@@ -556,6 +643,16 @@ function showStart(): void {
         startRun(w.seedText, w.biome, w.archetype, w.size, 'flow');
       },
     },
+    (() => {
+      const save = loadHearth();
+      return {
+        label: save
+          ? `Очаг: тик ${JSON.parse(save.world).tick}, один ${fmtAbsence(elapsedTicks(save))}`
+          : 'Разжечь Очаг — вечный мир',
+        onPlay: startHearth,
+      };
+    })(),
+    { onPlay: startBreath },
   );
 }
 
@@ -623,7 +720,7 @@ function setSeed(i: number, strain: number): boolean {
 }
 
 function sowAt(cssX: number, cssY: number): void {
-  if (player) return; // в чужом мире руки убраны
+  if (player || breathMode) return; // в чужом мире и в созерцании руки убраны
   const c = renderer.cellAt(cssX, cssY);
   if (!c) return;
 
@@ -823,8 +920,43 @@ function frame(now: number): void {
   if (accumulator > 1000) accumulator = 1000;
 
   let frac = 1;
-  if (running && !paused) {
-    const stepMs = TICK_MS / (SPEEDS[speedIdx] as number);
+  // Домотка очага: проживаем время отсутствия порциями, не вешая кадр.
+  if (running && hearthCatchUp > 0) {
+    const chunk = Math.min(150, hearthCatchUp);
+    for (let k = 0; k < chunk && running; k++) {
+      world = tick(world, me);
+      measure();
+      checkEnd();
+    }
+    hearthCatchUp -= chunk;
+    hud.setBudgetText(hearthCatchUp > 0 ? `домотка ${fmtAbsence(hearthCatchUp)}` : null);
+    if (hearthCatchUp === 0 && running) {
+      hud.toast(`Мир дожил до ${world.tick} тика. Ты вернулся вовремя.`);
+      persistHearth();
+    }
+    accumulator = 0;
+  } else if (running && !paused) {
+    let baseMs = hearthMode ? 1000 / HEARTH_TPS : TICK_MS;
+    if (breathMode) {
+      // Цикл 4-4-8: вдох — мир почти замирает, выдох — течёт.
+      const phase = ((now - breathStartedAt) % 16000) / 16000;
+      const breathFactor = phase < 0.25 ? 0.25 : phase < 0.5 ? 0.6 : 1.6;
+      baseMs = TICK_MS / breathFactor;
+      if (now - breathStartedAt > BREATH_SESSION_MS) {
+        breathMode = false;
+        const note = window.prompt('Сессия окончена. Что ты заметил? (одна строка в личную летопись)');
+        if (note) {
+          try {
+            const key = 'monas.reflections';
+            const arr = JSON.parse(localStorage.getItem(key) ?? '[]') as string[];
+            arr.push(`${new Date().toISOString().slice(0, 10)}: ${note}`);
+            localStorage.setItem(key, JSON.stringify(arr));
+          } catch { /* ок */ }
+        }
+        finishRun();
+      }
+    }
+    const stepMs = baseMs / (SPEEDS[speedIdx] as number);
     while (accumulator >= stepMs && running) {
       applyReplayEvents();
       prevWorld = world;
@@ -836,6 +968,8 @@ function frame(now: number): void {
     refreshForecast();
     // Дыхание между тиками: доля пути от прошлого состояния к нынешнему.
     if (running) frac = Math.min(1, accumulator / stepMs);
+    // Очаг автосохраняется раз в 20 секунд.
+    if (hearthMode && now - lastHearthSave > 20000) persistHearth();
   } else {
     accumulator = 0;
     prevWorld = null;
@@ -879,6 +1013,11 @@ function frame(now: number): void {
   hud.update(world, report, lenses.unlocked3 ? horizonNow() : null, STAGE_NAMES[stage]);
   requestAnimationFrame(frame);
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') persistHearth();
+});
+window.addEventListener('pagehide', () => persistHearth());
 
 showStart();
 requestAnimationFrame(frame);

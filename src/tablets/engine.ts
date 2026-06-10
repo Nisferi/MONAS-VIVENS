@@ -99,4 +99,31 @@ export class TabletEngine {
     this.firedLog = [];
     this.nextId = 1;
   }
+
+  /** Сон очага: таблички переживают закрытую вкладку. */
+  toJSON(): string {
+    return JSON.stringify({
+      tablets: this.tablets,
+      sleepers: this.sleepers,
+      firedLog: this.firedLog,
+      nextId: this.nextId,
+    });
+  }
+
+  fromJSON(json: string): void {
+    try {
+      const d = JSON.parse(json) as {
+        tablets: Tablet[];
+        sleepers: Sleeper[];
+        firedLog: string[];
+        nextId: number;
+      };
+      this.tablets = d.tablets ?? [];
+      this.sleepers = d.sleepers ?? [];
+      this.firedLog = d.firedLog ?? [];
+      this.nextId = d.nextId ?? 1;
+    } catch {
+      this.reset();
+    }
+  }
 }
