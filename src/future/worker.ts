@@ -26,7 +26,15 @@ self.onmessage = (e: MessageEvent<ForecastRequest>) => {
   const { cells, age, kind, gene, terrain, signal, baseTick, energy, me, steps, frames } = e.data;
   // Размер поля выводим из данных — у воркера своя копия модуля grid.
   setGridSize(Math.round(Math.sqrt(cells.length)));
-  let state: WorldState = { tick: baseTick, cells, age, kind, gene, terrain, signal, energy };
+  // Тело клеток (АТФ/мембрана/спайки) — оверлей: на клетки прогноза не влияет.
+  const n = cells.length;
+  let state: WorldState = {
+    tick: baseTick, cells, age, kind, gene, terrain, signal,
+    atp: new Uint8Array(n).fill(160),
+    integ: new Uint8Array(n).fill(255),
+    spike: new Uint8Array(n),
+    energy,
+  };
 
   const out: { at: number; cells: Uint8Array }[] = [];
   const transfers: ArrayBuffer[] = [];

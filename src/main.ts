@@ -1345,6 +1345,18 @@ function frame(now: number): void {
     if (now - lastAmbient > 500) {
       lastAmbient = now;
       sound.ambient(aliveSeeds() / world.cells.length, world.energy, stage);
+      // §16.2 Голоса клеток: пересчитать слова последнего тика.
+      let nAlarm = 0;
+      let nCall = 0;
+      let nHunger = 0;
+      const sp = world.spike;
+      for (let i = 0; i < sp.length; i++) {
+        const w = sp[i];
+        if (w === 1) nAlarm++;
+        else if (w === 2) nCall++;
+        else if (w === 3) nHunger++;
+      }
+      sound.voices(nAlarm, nCall, nHunger);
     }
   }
 

@@ -76,8 +76,23 @@ export interface WorldState {
   terrain: Uint8Array;
   /** Сигнальное поле — «грибница»: химия стресса/присутствия (Ярус 1 разума). */
   signal: Float32Array;
+  /** АТФ клетки 0..255 — личный запас энергии (живая клетка, §16.1). */
+  atp: Uint8Array;
+  /** Целостность мембраны 0..255 — «здоровье» клетки (§16.1). */
+  integ: Uint8Array;
+  /** Слово электрического языка, излучённое в этот тик (Word, §16.2). */
+  spike: Uint8Array;
   /** Энергия поля, 0..100. Часть детерминированного состояния — прогноз её видит. */
   energy: number;
+}
+
+/** Слова электрического языка клеток (§16.2). */
+export const enum Word {
+  None = 0,
+  Alarm = 1, // тревога: целостность падает / враг рядом
+  Call = 2, // зов: заряд высок, есть место — делитесь сюда
+  Hunger = 3, // голод: АТФ низок — не плодитесь
+  Self = 4, // свой: тихая метка рода
 }
 
 export function createWorld(
@@ -101,6 +116,15 @@ export function createWorld(
       gene[i] = Math.floor(grng() * 256); // первое поколение — случайный разброс осторожности
     }
   }
+  // Новорождённый мир: у живых полный заряд и целая мембрана.
+  const atp = new Uint8Array(GRID_SIZE);
+  const integ = new Uint8Array(GRID_SIZE);
+  for (let i = 0; i < GRID_SIZE; i++) {
+    if (cells[i] === Cell.Seed) {
+      atp[i] = 160;
+      integ[i] = 255;
+    }
+  }
   return {
     tick: 0,
     cells,
@@ -109,6 +133,9 @@ export function createWorld(
     gene,
     terrain: land,
     signal: new Float32Array(GRID_SIZE),
+    atp,
+    integ,
+    spike: new Uint8Array(GRID_SIZE),
     energy,
   };
 }
@@ -122,6 +149,9 @@ export function cloneWorld(state: WorldState): WorldState {
     gene: state.gene.slice(),
     terrain: state.terrain, // рельеф вечен — общая ссылка
     signal: state.signal.slice(),
+    atp: state.atp.slice(),
+    integ: state.integ.slice(),
+    spike: state.spike.slice(),
     energy: state.energy,
   };
 }
@@ -139,6 +169,8 @@ export function serializeWorld(state: WorldState): string {
     kind: Array.from(state.kind),
     gene: Array.from(state.gene),
     terrain: Array.from(state.terrain),
+    atp: Array.from(state.atp),
+    integ: Array.from(state.integ),
     energy: state.energy,
   });
 }
@@ -151,6 +183,8 @@ export function deserializeWorld(json: string): WorldState {
     kind?: number[];
     gene?: number[];
     terrain?: number[];
+    atp?: number[];
+    integ?: number[];
     energy?: number;
   };
   return {
@@ -162,6 +196,9 @@ export function deserializeWorld(json: string): WorldState {
     terrain: raw.terrain ? Uint8Array.from(raw.terrain) : new Uint8Array(raw.cells.length),
     // Сигнальное поле не сохраняем — оно отрастает заново за десяток тиков.
     signal: new Float32Array(raw.cells.length),
+    atp: raw.atp ? Uint8Array.from(raw.atp) : new Uint8Array(raw.cells.length).fill(160),
+    integ: raw.integ ? Uint8Array.from(raw.integ) : new Uint8Array(raw.cells.length).fill(255),
+    spike: new Uint8Array(raw.cells.length),
     energy: raw.energy ?? 100,
   };
 }

@@ -224,7 +224,7 @@ export class FieldRenderer {
     shadow: { x: number; y: number } | null = null,
   ): void {
     if (lens === 4 && heat) paintChronicle(this.cellCtx, this.image, heat);
-    else if (lens === 5) paintMycelium(this.cellCtx, this.image, state.signal);
+    else if (lens === 5) paintMycelium(this.cellCtx, this.image, state.signal, state.spike);
     else this.paintCells(state, prev, frac);
 
     const { ctx, canvas } = this;

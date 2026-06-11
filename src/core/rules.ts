@@ -8,7 +8,7 @@
  */
 import { SPROUT_ENERGY, STARVATION_LEVEL, nextEnergy } from './energy';
 import {
-  BASE_STRAINS, Cell, GRID_H, GRID_W, HYBRID_STRAIN, STRAINS, Terrain,
+  BASE_STRAINS, Cell, GRID_H, GRID_W, HYBRID_STRAIN, STRAINS, Terrain, Word,
   type WorldState, cloneWorld, onGridResize,
 } from './grid';
 import { SPRING_INFLUX } from './terrain';
@@ -236,6 +236,12 @@ export function tick(state: WorldState, me: Me): WorldState {
   }
   if (emitBuf.length !== sig.length) emitBuf = new Float32Array(sig.length);
   emitBuf.set(sig);
+  // Живая клетка (§16, ярус A): спайки пересчитываются каждый тик с нуля.
+  next.spike.fill(0);
+  const srcAtp = state.atp;
+  const srcInteg = state.integ;
+  const sh = shadowAt(me, state.tick);
+  const atpGain = 2 + Math.round((state.energy / 100) * 6);
   let alive = 0;
   let springs = 0;
 
@@ -283,11 +289,35 @@ export function tick(state: WorldState, me: Me): WorldState {
           const caution = (srcGene[i] as number) / 255;
           const effStress = QUORUM_STRESS * (0.4 + (1 - caution) * 2.4); // 0.4×..2.8× базы
           if (stormNear && age >= QUORUM_AGE && (sig[i] as number) >= effStress) {
-            // Спячка хранит геном (клон уже скопировал gene[i]).
+            // Спячка хранит геном и заряд (клон уже скопировал) — спайк молчит.
             next.cells[i] = Cell.Spore;
             next.age[i] = 0;
           } else {
             next.age[i] = Math.min(age + 1, 0xffff);
+            // §16.1 Метаболизм: заряд из энергии поля минус жизнь и теснота.
+            const cost = 4 + (n >= 4 ? 2 : 0);
+            const na = Math.min(255, Math.max(0, (srcAtp[i] as number) + atpGain - cost));
+            next.atp[i] = na;
+            // §16.1 Мембрана: Тень ранит, голод точит, покой лечит.
+            let shadowNear = false;
+            if (sh) {
+              const ddx = Math.abs((i % GRID_W) - sh.x);
+              const ddy = Math.abs(((i / GRID_W) | 0) - sh.y);
+              shadowNear =
+                Math.min(ddx, GRID_W - ddx) <= 2 && Math.min(ddy, GRID_H - ddy) <= 2;
+            }
+            const dInteg = shadowNear ? -25 : starving ? -10 : n >= 5 ? -4 : 6;
+            const ni = Math.min(255, Math.max(0, (srcInteg[i] as number) + dInteg));
+            next.integ[i] = ni;
+            // §16.2 Электрический язык: одно слово за тик.
+            next.spike[i] =
+              dInteg <= -15
+                ? Word.Alarm
+                : na < 70
+                  ? Word.Hunger
+                  : na > 200 && n <= 2
+                    ? Word.Call
+                    : Word.Self;
           }
         } else if (starving && n >= me.surviveMin - 1) {
           // Голодная смерть на грани — жизнь сворачивается в Спору, не в Прах.
@@ -296,12 +326,16 @@ export function tick(state: WorldState, me: Me): WorldState {
         } else {
           next.cells[i] = Cell.Ash;
           next.age[i] = 0;
+          next.atp[i] = 0;
+          next.integ[i] = 0;
         }
       } else if (cell === Cell.Spore) {
-        // Спора ждёт сытости — и прорастает, помня свой род.
+        // Спора ждёт сытости — и прорастает, помня свой род и заряд.
         if (sprouting) {
           next.cells[i] = Cell.Seed;
           next.age[i] = 0;
+          next.integ[i] = 200;
+          next.spike[i] = Word.Self;
         }
       } else if (cell !== Cell.Signal && n >= me.birthMin && n <= me.birthMax) {
         // Жизнь прорастает и сквозь Прах: тлен — след, не преграда.
@@ -312,6 +346,9 @@ export function tick(state: WorldState, me: Me): WorldState {
         birthNeigh[4] = n4; birthNeigh[5] = n5; birthNeigh[6] = n6; birthNeigh[7] = n7;
         next.kind[i] = inheritStrain(src, srcKind, sig);
         next.gene[i] = inheritGene(src, srcGene, sig, i, state.tick);
+        next.atp[i] = 120;
+        next.integ[i] = 255;
+        next.spike[i] = Word.Self;
       } else if (cell === Cell.Ash) {
         const a = (srcAge[i] ?? 0) + 1;
         if (a >= me.ashLifetime) {
@@ -325,7 +362,6 @@ export function tick(state: WorldState, me: Me): WorldState {
   }
 
   // Тень шторма: гасит Семена в 3×3 вокруг себя. Споры ей не по зубам.
-  const sh = shadowAt(me, state.tick);
   if (sh) {
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
@@ -335,6 +371,9 @@ export function tick(state: WorldState, me: Me): WorldState {
         if (next.cells[ii] === Cell.Seed) {
           next.cells[ii] = Cell.Ash;
           next.age[ii] = 0;
+          next.atp[ii] = 0;
+          next.integ[ii] = 0;
+          next.spike[ii] = 0;
         }
       }
     }
@@ -357,6 +396,8 @@ export function tick(state: WorldState, me: Me): WorldState {
           next.age[ii] = 0;
           next.kind[ii] = hk % 3;
           next.gene[ii] = (hk >> 8) % 256;
+          next.atp[ii] = 160;
+          next.integ[ii] = 255;
         }
       }
     }

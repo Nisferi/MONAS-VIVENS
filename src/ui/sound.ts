@@ -126,6 +126,61 @@ export class SoundEngine {
     }
   }
 
+  /**
+   * §16.2 Голоса клеток: электрический язык слышен.
+   * Вызывается раз в ~0.5 с со счётом слов за последний тик.
+   */
+  voices(alarm: number, call: number, hunger: number): void {
+    if (!this.ctx || !this.master || this.muted) return;
+    // ТРЕВОГА — резкие высокие клики, стаккато (до 3 за раз).
+    const clicks = Math.min(3, Math.ceil(alarm / 8));
+    for (let k = 0; k < clicks; k++) {
+      const t = this.ctx.currentTime + k * 0.07;
+      const osc = this.ctx.createOscillator();
+      osc.type = 'square';
+      osc.frequency.value = 1500 + (k * 180);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(Math.min(0.06, 0.015 + alarm * 0.002), t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+      osc.connect(g);
+      g.connect(this.master);
+      osc.start(t);
+      osc.stop(t + 0.08);
+    }
+    // ЗОВ — мягкое восходящее глиссандо.
+    if (call > 3 && Math.random() < 0.5) {
+      const t = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(480, t);
+      osc.frequency.linearRampToValueAtTime(880, t + 0.25);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.04, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      osc.connect(g);
+      g.connect(this.master);
+      osc.start(t);
+      osc.stop(t + 0.4);
+    }
+    // ГОЛОД — глухой низкий пульс.
+    if (hunger > 10 && Math.random() < 0.6) {
+      const t = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = 82;
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(Math.min(0.09, 0.02 + hunger * 0.0015), t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      osc.connect(g);
+      g.connect(this.master);
+      osc.start(t);
+      osc.stop(t + 0.35);
+    }
+  }
+
   /** Короткая щипковая нота — голос генеративной музыки. */
   private pluck(freq: number, vol: number): void {
     if (!this.ctx || !this.master) return;
