@@ -33,6 +33,7 @@ self.onmessage = (e: MessageEvent<ForecastRequest>) => {
     atp: new Uint8Array(n).fill(160),
     integ: new Uint8Array(n).fill(255),
     spike: new Uint8Array(n),
+    mito: new Uint8Array(n),
     energy,
   };
 

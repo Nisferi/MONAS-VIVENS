@@ -82,6 +82,8 @@ export interface WorldState {
   integ: Uint8Array;
   /** Слово электрического языка, излучённое в этот тик (Word, §16.2). */
   spike: Uint8Array;
+  /** Митохондрии 0..7 — вобранные симбионты, усиливают метаболизм (§16.3). */
+  mito: Uint8Array;
   /** Энергия поля, 0..100. Часть детерминированного состояния — прогноз её видит. */
   energy: number;
 }
@@ -136,6 +138,7 @@ export function createWorld(
     atp,
     integ,
     spike: new Uint8Array(GRID_SIZE),
+    mito: new Uint8Array(GRID_SIZE),
     energy,
   };
 }
@@ -152,6 +155,7 @@ export function cloneWorld(state: WorldState): WorldState {
     atp: state.atp.slice(),
     integ: state.integ.slice(),
     spike: state.spike.slice(),
+    mito: state.mito.slice(),
     energy: state.energy,
   };
 }
@@ -171,6 +175,7 @@ export function serializeWorld(state: WorldState): string {
     terrain: Array.from(state.terrain),
     atp: Array.from(state.atp),
     integ: Array.from(state.integ),
+    mito: Array.from(state.mito),
     energy: state.energy,
   });
 }
@@ -185,6 +190,7 @@ export function deserializeWorld(json: string): WorldState {
     terrain?: number[];
     atp?: number[];
     integ?: number[];
+    mito?: number[];
     energy?: number;
   };
   return {
@@ -199,6 +205,7 @@ export function deserializeWorld(json: string): WorldState {
     atp: raw.atp ? Uint8Array.from(raw.atp) : new Uint8Array(raw.cells.length).fill(160),
     integ: raw.integ ? Uint8Array.from(raw.integ) : new Uint8Array(raw.cells.length).fill(255),
     spike: new Uint8Array(raw.cells.length),
+    mito: raw.mito ? Uint8Array.from(raw.mito) : new Uint8Array(raw.cells.length),
     energy: raw.energy ?? 100,
   };
 }

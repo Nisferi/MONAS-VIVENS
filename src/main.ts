@@ -125,6 +125,8 @@ let heat = new Float32Array(0);
 const namedForms = new Map<number, NamedForm>();
 /** Заря уже взошла в этой партии? */
 let dawnSeen = false;
+/** Первый эндосимбиоз уже случился? (§16.3) */
+let symbiosisSeen = false;
 /** Активная глава кампании «Эоны». */
 let activeEon: Eon | null = null;
 /** Откат последнего жеста: посев или правка Ме. */
@@ -253,6 +255,18 @@ function measure(): void {
       if (f.diedTick === null && !present.has(f.id)) {
         f.diedTick = world.tick;
         hud.toast(`${f.name} больше нет. Летопись запомнит.`);
+      }
+    }
+
+    // Эндосимбиоз: первый носитель митохондрий.
+    if (!symbiosisSeen) {
+      for (let i = 0; i < world.cells.length; i++) {
+        if (world.cells[i] === Cell.Seed && (world.mito[i] ?? 0) > 0) {
+          symbiosisSeen = true;
+          hud.toast('Слияние! Клетка вобрала чужую — родилась митохондрия.');
+          sound.event('mind');
+          break;
+        }
       }
     }
 
@@ -409,6 +423,7 @@ function startRun(
   namedForms.clear();
   milestones.namedForms = [];
   dawnSeen = false;
+  symbiosisSeen = false;
   lastGesture = null;
   if (goals && !player) goals.show();
   lastStormIndex = -1;

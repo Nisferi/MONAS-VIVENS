@@ -240,10 +240,12 @@ export function tick(state: WorldState, me: Me): WorldState {
   next.spike.fill(0);
   const srcAtp = state.atp;
   const srcInteg = state.integ;
+  const srcMito = state.mito;
   const sh = shadowAt(me, state.tick);
   const atpGain = 2 + Math.round((state.energy / 100) * 6);
   let alive = 0;
   let springs = 0;
+  let symbioses = 0;
 
   for (let y = 0; y < GRID_H; y++) {
     const row = y * GRID_W;
@@ -275,6 +277,9 @@ export function tick(state: WorldState, me: Me): WorldState {
         (src[n5] === Cell.Seed ? 1 : 0) +
         (src[n6] === Cell.Seed ? 1 : 0) +
         (src[n7] === Cell.Seed ? 1 : 0);
+      // Соседи под рукой и для рождения, и для эндосимбиоза.
+      birthNeigh[0] = n0; birthNeigh[1] = n1; birthNeigh[2] = n2; birthNeigh[3] = n3;
+      birthNeigh[4] = n4; birthNeigh[5] = n5; birthNeigh[6] = n6; birthNeigh[7] = n7;
 
       if (cell === Cell.Seed) {
         alive++;
@@ -294,9 +299,11 @@ export function tick(state: WorldState, me: Me): WorldState {
             next.age[i] = 0;
           } else {
             next.age[i] = Math.min(age + 1, 0xffff);
-            // §16.1 Метаболизм: заряд из энергии поля минус жизнь и теснота.
+            // §16.1/16.3 Метаболизм: каждая митохондрия усиливает выработку заряда.
+            const mt = srcMito[i] as number;
             const cost = 4 + (n >= 4 ? 2 : 0);
-            const na = Math.min(255, Math.max(0, (srcAtp[i] as number) + atpGain - cost));
+            const gain = atpGain + atpGain * mt * 0.5;
+            const na = Math.min(255, Math.max(0, (srcAtp[i] as number) + gain - cost));
             next.atp[i] = na;
             // §16.1 Мембрана: Тень ранит, голод точит, покой лечит.
             let shadowNear = false;
@@ -324,6 +331,29 @@ export function tick(state: WorldState, me: Me): WorldState {
           next.cells[i] = Cell.Spore;
           next.age[i] = 0;
         } else {
+          // §16.3 Эндосимбиоз: вместо гибели — слияние с сильным чужаком.
+          // Ищем живого соседа ДРУГОГО рода с высоким зарядом и местом для мито.
+          let host = -1;
+          let hostAtp = 165; // порог «сильного» носителя
+          const myKind = srcKind[i] as number;
+          for (let k = 0; k < 8; k++) {
+            const ni = birthNeigh[k] as number;
+            if (
+              src[ni] === Cell.Seed &&
+              (srcKind[ni] as number) !== myKind &&
+              (srcMito[ni] as number) < 7 &&
+              (srcAtp[ni] as number) > hostAtp
+            ) {
+              host = ni;
+              hostAtp = srcAtp[ni] as number;
+            }
+          }
+          if (host >= 0 && next.cells[host] === Cell.Seed) {
+            // Носитель вбирает симбионта: +1 митохондрия, заряд частично переходит.
+            next.mito[host] = Math.min(7, (next.mito[host] as number) + 1);
+            next.atp[host] = Math.min(255, (next.atp[host] as number) + 30);
+            symbioses++;
+          }
           next.cells[i] = Cell.Ash;
           next.age[i] = 0;
           next.atp[i] = 0;
@@ -342,10 +372,19 @@ export function tick(state: WorldState, me: Me): WorldState {
         // Это сохраняет точную динамику Конвея при любом ashLifetime.
         next.cells[i] = Cell.Seed;
         next.age[i] = 0;
-        birthNeigh[0] = n0; birthNeigh[1] = n1; birthNeigh[2] = n2; birthNeigh[3] = n3;
-        birthNeigh[4] = n4; birthNeigh[5] = n5; birthNeigh[6] = n6; birthNeigh[7] = n7;
         next.kind[i] = inheritStrain(src, srcKind, sig);
         next.gene[i] = inheritGene(src, srcGene, sig, i, state.tick);
+        // §16.3 Симбиотическое наследие: линия носителей крепнет поколениями.
+        let bestMito = 0;
+        let bestMitoSig = -1;
+        for (let k = 0; k < 8; k++) {
+          const ni = birthNeigh[k] as number;
+          if (src[ni] === Cell.Seed && (sig[ni] as number) > bestMitoSig) {
+            bestMitoSig = sig[ni] as number;
+            bestMito = srcMito[ni] as number;
+          }
+        }
+        next.mito[i] = bestMito;
         next.atp[i] = 120;
         next.integ[i] = 255;
         next.spike[i] = Word.Self;

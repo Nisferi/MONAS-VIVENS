@@ -242,6 +242,8 @@ export class FieldRenderer {
       ctx.drawImage(this.cellCanvas, originX, originY, GRID_W * s, GRID_H * s);
       // При прицеливании сетка видна всегда — игрок думает, куда заложить Семя.
       if (lens === 1 && (s >= GRID_LINES_FROM || aim)) this.paintGrid(originX, originY, s);
+      // §16.3 Носители митохондрий: тёмное ядро-точка, когда клетки крупны.
+      if (lens === 1 && s >= 5) this.paintNuclei(state, originX, originY, s);
     } else if (lens === 2) {
       // Линза Филии: клетки — лишь тень внизу, поверх — узлы и нити.
       ctx.globalAlpha = 0.18;
@@ -354,6 +356,23 @@ export class FieldRenderer {
       px[o + 3] = 255;
     }
     this.cellCtx.putImageData(this.image, 0, 0);
+  }
+
+  /** §16.3 Ядро симбионта: точка в клетке-носителе, ярче при больше митохондрий. */
+  private paintNuclei(state: WorldState, originX: number, originY: number, s: number): void {
+    const { ctx } = this;
+    const mito = state.mito;
+    const r = Math.max(1, s * 0.18);
+    for (let i = 0; i < mito.length; i++) {
+      const m = mito[i] as number;
+      if (m === 0 || state.cells[i] !== Cell.Seed) continue;
+      const x = originX + (i % GRID_W) * s + s / 2;
+      const y = originY + ((i / GRID_W) | 0) * s + s / 2;
+      ctx.fillStyle = `rgba(10, 4, 18, ${Math.min(0.9, 0.4 + m * 0.1).toFixed(2)})`;
+      ctx.beginPath();
+      ctx.arc(x, y, r + m * s * 0.04, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   private paintGrid(originX: number, originY: number, s: number): void {
