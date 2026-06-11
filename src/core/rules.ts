@@ -39,6 +39,14 @@ export interface Me {
   will: number;
   /** Детерминированная судьба: серия Нейкос-штормов (из seed). */
   threats: ThreatWindow[];
+  /** Редкие события судьбы: кометный посев, год тишины (из seed). */
+  events: WorldEvent[];
+}
+
+export interface WorldEvent {
+  kind: 'comet' | 'quiet';
+  tick: number;
+  duration: number;
 }
 
 /** Классический Конвей: B3/S23 — проверенная точка старта эмерджентности. */
@@ -52,6 +60,7 @@ export const DEFAULT_ME: Me = {
   energyDrainPer100: 0.06,
   will: 5,
   threats: [],
+  events: [],
 };
 
 export const ME_LIMITS = {
@@ -170,6 +179,30 @@ function inheritGene(
   const mut = (h % 11) - 5; // ±5 на поколение
   const g = best + mut;
   return g < 0 ? 0 : g > 255 ? 255 : g;
+}
+
+/**
+ * Тень — тело Нейкос-шторма: блуждающий гаситель жизни.
+ * Позиция — чистая функция (шторм, тик): путь Лиссажу из hash начала шторма.
+ * Прогноз видит её, реплеи совпадают. Споры неуязвимы — спячка спасает.
+ */
+export function shadowAt(me: Me, tickNo: number): { x: number; y: number } | null {
+  for (const t of me.threats) {
+    if (tickNo >= t.tick && tickNo < t.tick + t.duration) {
+      const h = Math.imul(t.tick, 2654435761) >>> 0;
+      // Медленное блуждание: за шторм Тень проходит лишь часть мира.
+      const ax = 0.012 + (h % 13) * 0.002;
+      const ay = 0.010 + ((h >> 4) % 11) * 0.0025;
+      const phx = (h % 628) / 100;
+      const phy = ((h >> 8) % 628) / 100;
+      const u = tickNo - t.tick;
+      return {
+        x: Math.floor((0.5 + 0.42 * Math.sin(ax * u + phx)) * GRID_W),
+        y: Math.floor((0.5 + 0.42 * Math.cos(ay * u + phy)) * GRID_H),
+      };
+    }
+  }
+  return null;
 }
 
 /** Один шаг мира. Не мутирует вход. */
@@ -291,6 +324,44 @@ export function tick(state: WorldState, me: Me): WorldState {
     }
   }
 
+  // Тень шторма: гасит Семена в 3×3 вокруг себя. Споры ей не по зубам.
+  const sh = shadowAt(me, state.tick);
+  if (sh) {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const ix = (sh.x + dx + GRID_W) % GRID_W;
+        const iy = (sh.y + dy + GRID_H) % GRID_H;
+        const ii = iy * GRID_W + ix;
+        if (next.cells[ii] === Cell.Seed) {
+          next.cells[ii] = Cell.Ash;
+          next.age[ii] = 0;
+        }
+      }
+    }
+  }
+
+  // Редкие события судьбы (из seed, видны прогнозу).
+  for (const ev of me.events) {
+    if (ev.kind === 'comet' && state.tick === ev.tick) {
+      // Кометный посев: горсть Семян с неба, узором из hash.
+      const h0 = Math.imul(ev.tick ^ 0xc0337, 2654435761) >>> 0;
+      const cx = h0 % GRID_W;
+      const cy = (h0 >> 8) % GRID_H;
+      for (let k = 0; k < 24; k++) {
+        const hk = Math.imul(h0 ^ (k + 1), 40503) >>> 0;
+        const ix = (cx + (hk % 11) - 5 + GRID_W) % GRID_W;
+        const iy = (cy + ((hk >> 4) % 11) - 5 + GRID_H) % GRID_H;
+        const ii = iy * GRID_W + ix;
+        if (next.cells[ii] === Cell.Empty && terrain[ii] !== Terrain.Crystal) {
+          next.cells[ii] = Cell.Seed;
+          next.age[ii] = 0;
+          next.kind[ii] = hk % 3;
+          next.gene[ii] = (hk >> 8) % 256;
+        }
+      }
+    }
+  }
+
   // Диффузия грибницы: вещество растекается по 8 соседям и затухает.
   const nsig = next.signal;
   for (let y = 0; y < GRID_H; y++) {
@@ -315,7 +386,13 @@ export function tick(state: WorldState, me: Me): WorldState {
     }
   }
 
-  next.energy = nextEnergy(state.energy, alive, me, state.tick, springs * SPRING_INFLUX);
+  let quietBonus = 0;
+  for (const ev of me.events) {
+    if (ev.kind === 'quiet' && state.tick >= ev.tick && state.tick < ev.tick + ev.duration) {
+      quietBonus = me.energyInflux; // приток удваивается
+    }
+  }
+  next.energy = nextEnergy(state.energy, alive, me, state.tick, springs * SPRING_INFLUX + quietBonus);
   next.tick = state.tick + 1;
   return next;
 }

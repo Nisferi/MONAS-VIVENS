@@ -7,7 +7,7 @@
 import { Cell, GRID_W, Terrain, type WorldState } from '../core/grid';
 import { MIN_FORM_SIZE, type Cluster } from '../phi/clusters';
 
-export type ActionKind = 'sever' | 'sleep' | 'sacrifice' | 'infuse' | 'resow';
+export type ActionKind = 'sever' | 'sleep' | 'sacrifice' | 'infuse' | 'resow' | 'awaken';
 
 export const ACTION_OPTIONS: { kind: ActionKind; label: string }[] = [
   { kind: 'sever', label: 'разорвать перегруз (отсечь край крупнейшей формы)' },
@@ -15,6 +15,7 @@ export const ACTION_OPTIONS: { kind: ActionKind; label: string }[] = [
   { kind: 'sacrifice', label: 'пожертвовать наименьшую форму' },
   { kind: 'infuse', label: 'влить запас энергии (+20)' },
   { kind: 'resow', label: 'засеять кольцо у сердца крупнейшей формы' },
+  { kind: 'awaken', label: 'разбудить все Споры немедленно' },
 ];
 
 export function describeAction(kind: ActionKind): string {
@@ -95,6 +96,17 @@ export function applyAction(
       // Запас, заложенный в глину при высечении, вливается в поле.
       world.energy = Math.min(100, world.energy + 20);
       return { message: 'запас энергии влился в поле (+20)' };
+    }
+    case 'awaken': {
+      let woke = 0;
+      for (let i = 0; i < world.cells.length; i++) {
+        if (world.cells[i] === Cell.Spore) {
+          world.cells[i] = Cell.Seed;
+          world.age[i] = 0;
+          woke++;
+        }
+      }
+      return woke > 0 ? { message: `${woke} Спор проснулись разом` } : null;
     }
     case 'resow': {
       const c = largestForm(clusters);

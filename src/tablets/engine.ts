@@ -60,7 +60,8 @@ export class TabletEngine {
     // Сработка табличек: одна за тик, чтобы события читались.
     for (const t of this.tablets) {
       if (t.fired) continue;
-      if (!conditionMet(t.condition, report, world, me)) continue;
+      const firedByIndex = this.tablets.map((x) => x.fired);
+      if (!conditionMet(t.condition, report, world, me, firedByIndex)) continue;
       const outcome = applyAction(t.action, world, clusters);
       t.fired = true;
       t.firedTick = world.tick;

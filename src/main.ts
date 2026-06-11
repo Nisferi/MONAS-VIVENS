@@ -8,7 +8,7 @@ import {
   createWorld, setGridSize, type WorldState,
 } from './core/grid';
 import { generateTerrain } from './core/terrain';
-import { DEFAULT_ME, tick, type Me } from './core/rules';
+import { DEFAULT_ME, shadowAt, tick, type Me } from './core/rules';
 import { Forecaster } from './future/forecast';
 import { horizonTicks } from './future/horizon';
 import { LensSwitcher } from './lens/switcher';
@@ -26,6 +26,7 @@ import { NAME_AGE, NAME_SIZE, formName, type NamedForm } from './phi/names';
 import { GoalsPanel } from './ui/goals';
 import { discoverForm, loadLayoutBest, loadWeeklyBest, saveLayoutBest, saveTrialStars, saveWeeklyBest } from './platform/storage';
 import { currentWeekly } from './run/weekly';
+import { EONS, eonComplete, eonsProgress, type Eon } from './run/eons';
 import {
   HEARTH_TPS, clearHearth, clearResume, elapsedTicks, eternalThreats, fmtAbsence,
   loadHearth, loadResume, packWorld, restoreWorld, saveHearth, saveResume,
@@ -124,6 +125,8 @@ let heat = new Float32Array(0);
 const namedForms = new Map<number, NamedForm>();
 /** Заря уже взошла в этой партии? */
 let dawnSeen = false;
+/** Активная глава кампании «Эоны». */
+let activeEon: Eon | null = null;
 /** Откат последнего жеста: посев или правка Ме. */
 let lastGesture:
   | { kind: 'sow'; i: number; budget: 'sower' | PieceKind | null }
@@ -190,6 +193,19 @@ function measure(): void {
   if (me.threats.length > 0 && world.tick >= lastThreatEnd(me)) {
     aftermathNeikosSum += report.neikos;
     aftermathNeikosN++;
+  }
+
+  // События судьбы: голос в момент свершения.
+  for (const ev of me.events) {
+    if (world.tick === ev.tick) {
+      hud.toast(ev.kind === 'comet'
+        ? 'Комета прошла — небо засеяло землю новыми Семенами.'
+        : 'Год тишины: родники полны, приток удвоен.');
+      sound.event('form');
+    }
+    if (ev.kind === 'quiet' && world.tick === ev.tick + ev.duration) {
+      hud.toast('Год тишины окончен.');
+    }
   }
 
   // Эволюция (Ярус 3): отчёт о дрейфе осторожности — скан раз в 10 тиков.
@@ -336,6 +352,7 @@ function startRun(
   hearthMode = false;
   hearthCatchUp = 0;
   breathMode = false;
+  activeEon = null;
   (document.getElementById('mepanel') as HTMLElement).style.display = '';
   cfg = makeRun(seedText, biome, archetype, size, mode);
   // Испытание: фиксированный паззл Сеятеля поверх обычного конфига.
@@ -800,6 +817,12 @@ function showSetup(): void {
   );
 }
 
+function startEon(eon: Eon): void {
+  startRun(eon.seedText, eon.biome, eon.archetype, eon.size, 'flow');
+  activeEon = eon;
+  hud.toast(`Эон ${eon.id} «${eon.name}»: ${eon.goalText}.`);
+}
+
 function resumeRun(): void {
   const save = loadResume();
   if (!save) return;
@@ -862,6 +885,18 @@ function showStart(): void {
         onClick: () => {
           screens.hide();
           startRun(w.seedText, w.biome, w.archetype, w.size, 'flow');
+        },
+      },
+      {
+        icon: '⛰', label: `Эоны — кампания (${eonsProgress()}/${EONS.length})`,
+        desc: (() => {
+          const next = EONS[eonsProgress()];
+          return next ? `глава ${next.id} «${next.name}»: ${next.goalText}` : 'все главы пройдены';
+        })(),
+        onClick: () => {
+          const next = EONS[Math.min(eonsProgress(), EONS.length - 1)] as Eon;
+          screens.hide();
+          startEon(next);
         },
       },
       {
@@ -1334,6 +1369,7 @@ function frame(now: number): void {
     renderer.render(
       world, lenses.current, clusters, prevWorld, frac, heat,
       aiming ? { x: aiming.x, y: aiming.y, rgb: aimRgb() } : null,
+      running ? shadowAt(me, world.tick) : null,
     );
     lastRenderKey = renderKey;
   }

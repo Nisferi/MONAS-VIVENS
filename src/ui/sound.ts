@@ -7,6 +7,21 @@ import type { Stage } from '../run/stages';
 
 export type SoundEvent = 'form' | 'mind' | 'storm' | 'tablet' | 'sow' | 'end';
 
+/**
+ * Генеративная музыка: лад зависит от фазы партии.
+ * Genesis — пентатоника (невинность), Морфогенез — дориан (строительство),
+ * Разум — лидийский (свет), Шторм — фригийский (тревога), развязка — эолийский.
+ */
+const SCALES: Record<Stage, number[]> = {
+  genesis: [0, 2, 4, 7, 9],
+  morpho: [0, 2, 3, 5, 7, 9, 10],
+  mind: [0, 2, 4, 6, 7, 9, 11],
+  crisis: [0, 1, 3, 5, 7, 8, 10],
+  respite: [0, 2, 4, 7, 9],
+  aftermath: [0, 2, 3, 5, 7, 8, 10],
+};
+const ROOT_HZ = 220;
+
 export class SoundEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -65,6 +80,16 @@ export class SoundEngine {
   ambient(density: number, energy: number, stage: Stage): void {
     if (!this.ctx || !this.droneGain || !this.droneFilter || !this.droneOscA || !this.droneOscB) return;
     const t = this.ctx.currentTime;
+
+    // Перезвон жизни: чем гуще поле, тем чаще нота из лада фазы.
+    // Презентация, не симуляция — Math.random здесь допустим.
+    if (!this.muted && Math.random() < Math.min(0.55, density * 2.2)) {
+      const scale = SCALES[stage];
+      const deg = scale[Math.floor(Math.random() * scale.length)] as number;
+      const octave = Math.random() < 0.3 ? 2 : 1;
+      const freq = ROOT_HZ * octave * Math.pow(2, deg / 12);
+      this.pluck(freq, stage === 'crisis' ? 0.05 : 0.04);
+    }
     const hush = stage === 'aftermath' ? 0.6 : 1;
     this.droneGain.gain.linearRampToValueAtTime(Math.min(0.16, density * 0.5) * hush, t + 0.5);
     this.droneFilter.frequency.linearRampToValueAtTime(140 + density * 900, t + 0.5);
@@ -99,6 +124,23 @@ export class SoundEngine {
         this.bell(330, 3, 0.12, 0.3);
         break;
     }
+  }
+
+  /** Короткая щипковая нота — голос генеративной музыки. */
+  private pluck(freq: number, vol: number): void {
+    if (!this.ctx || !this.master) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(vol, t + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+    osc.connect(gain);
+    gain.connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.8);
   }
 
   private bell(freq: number, decay: number, vol: number, delay = 0): void {

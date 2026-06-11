@@ -221,6 +221,7 @@ export class FieldRenderer {
     frac = 1,
     heat: Float32Array | null = null,
     aim: { x: number; y: number; rgb: [number, number, number] } | null = null,
+    shadow: { x: number; y: number } | null = null,
   ): void {
     if (lens === 4 && heat) paintChronicle(this.cellCtx, this.image, heat);
     else if (lens === 5) paintMycelium(this.cellCtx, this.image, state.signal);
@@ -262,6 +263,22 @@ export class FieldRenderer {
     ctx.strokeStyle = activeTheme.frame;
     ctx.lineWidth = Math.max(1, s * 0.06);
     ctx.strokeRect(originX, originY, GRID_W * s, GRID_H * s);
+
+    // Тень шторма: живое тёмное пятно — Нейкос обрёл тело.
+    if (shadow && (lens === 1 || lens === 3)) {
+      const sx = originX + (shadow.x + 0.5) * s;
+      const sy = originY + (shadow.y + 0.5) * s;
+      const r = s * 2.1;
+      const wob = 1 + 0.12 * Math.sin(performance.now() / 90);
+      const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * wob);
+      grad.addColorStop(0, 'rgba(5, 2, 10, 0.92)');
+      grad.addColorStop(0.6, 'rgba(20, 5, 30, 0.55)');
+      grad.addColorStop(1, 'rgba(40, 0, 50, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r * wob, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // Прицел посева: пульсирующая рамка + полупрозрачная фигура + перекрестье.
     if (aim) {
