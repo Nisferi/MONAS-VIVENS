@@ -17,6 +17,7 @@ export interface Milestones {
   firstFormTick: number | null;
   mindTick: number | null;
   namedForms: NamedFormNote[];
+  politics?: { allies: number; wars: number };
   threatTick: number;
   stormCount: number;
   tabletsFired: string[];
@@ -46,6 +47,17 @@ export function writeChronicle(m: Milestones, ending: Ending, cfg: RunConfig): s
   lines.push(
     `На ${m.threatTick} тике пришёл первый из ${m.stormCount} Нейкос-штормов — как и было предначертано.`,
   );
+
+  if (m.politics) {
+    const { allies, wars } = m.politics;
+    if (allies > 0 && wars > 0) {
+      lines.push(`Формы плели политику: ${allies} союз(ов) и ${wars} войн(а) за родники.`);
+    } else if (allies > 0) {
+      lines.push(`Разные рода нашли мир: ${allies} союз(ов) связали формы.`);
+    } else if (wars > 0) {
+      lines.push(`За родники шла война: ${wars} форм(ы) сошлись в борьбе.`);
+    }
+  }
 
   for (const f of m.namedForms.slice(0, 3)) {
     lines.push(

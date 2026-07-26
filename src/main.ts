@@ -13,6 +13,7 @@ import { Forecaster } from './future/forecast';
 import { horizonTicks } from './future/horizon';
 import { LensSwitcher } from './lens/switcher';
 import { ClusterTracker, type Cluster } from './phi/clusters';
+import { PoliticsTracker } from './phi/politics';
 import { NeikosMeter } from './phi/neikos';
 import { computePhi, type PhiReport } from './phi/phi';
 import { initPwa } from './platform/pwa';
@@ -97,6 +98,7 @@ let breathStartedAt = 0;
 const BREATH_SESSION_MS = 10 * 60 * 1000;
 
 const tracker = new ClusterTracker();
+const politics = new PoliticsTracker();
 const neikosMeter = new NeikosMeter();
 const lenses = new LensSwitcher();
 const forecaster = new Forecaster();
@@ -212,6 +214,14 @@ function measure(): void {
 
   // Эволюция (Ярус 3): отчёт о дрейфе осторожности — скан раз в 10 тиков.
   if (world.tick % 10 === 0) reportGeneDrift();
+
+  // Политика форм (§16.6): союзы и войны — скан раз в 5 тиков.
+  if (world.tick % 5 === 0) {
+    for (const msg of politics.update(world, clusters)) {
+      hud.toast(msg);
+      sound.event('form');
+    }
+  }
 
   // Таблички: спящие правила проверяются каждый тик.
   for (const msg of tabletEngine.update(world, clusters, report, me)) {
@@ -407,6 +417,7 @@ function startRun(
   heat = new Float32Array(world.cells.length);
 
   tracker.reset();
+  politics.reset();
   neikosMeter.reset();
   lenses.reset();
   lenses.mindPhi = cfg.mindPhi;
@@ -602,6 +613,10 @@ function finishRun(): void {
   milestones.finalTick = world.tick;
   milestones.finalPhi = report.phi;
   milestones.tabletsFired = [...tabletEngine.firedLog];
+  const pol = politics.summary();
+  if (pol.allies > 0 || pol.wars > 0) {
+    milestones.politics = pol;
+  }
   milestones.namedForms = [...namedForms.values()]
     .sort((a, b) => b.peakSize - a.peakSize)
     .map((f): NamedFormNote => ({
@@ -1397,6 +1412,7 @@ function frame(now: number): void {
       world, lenses.current, clusters, prevWorld, frac, heat,
       aiming ? { x: aiming.x, y: aiming.y, rgb: aimRgb() } : null,
       running ? shadowAt(me, world.tick) : null,
+      politics.established(),
     );
     lastRenderKey = renderKey;
   }

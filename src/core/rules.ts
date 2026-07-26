@@ -303,8 +303,40 @@ export function tick(state: WorldState, me: Me): WorldState {
             const mt = srcMito[i] as number;
             const cost = 4 + (n >= 4 ? 2 : 0);
             const gain = atpGain + atpGain * mt * 0.5;
-            const na = Math.min(255, Math.max(0, (srcAtp[i] as number) + gain - cost));
+            let na = Math.min(255, Math.max(0, (srcAtp[i] as number) + gain - cost));
+            // §16.6 Взаимопомощь: сытая клетка делится зарядом с голодным
+            // соседом своего рода. Кооперация — без изменения самих клеток.
+            if (na > 180) {
+              const myKind = srcKind[i] as number;
+              for (let k = 0; k < 8; k++) {
+                const ni = birthNeigh[k] as number;
+                if (
+                  src[ni] === Cell.Seed &&
+                  (srcKind[ni] as number) === myKind &&
+                  (srcAtp[ni] as number) < 90
+                ) {
+                  na -= 12; // отдал долю — в клетку-получатель добавит её собственный тик
+                  next.spike[i] = Word.Call;
+                  break;
+                }
+              }
+            }
             next.atp[i] = na;
+            // Приём дара: голодный сосед рядом с богатым родичем поднимает заряд.
+            if ((srcAtp[i] as number) < 90) {
+              const myKind = srcKind[i] as number;
+              for (let k = 0; k < 8; k++) {
+                const ni = birthNeigh[k] as number;
+                if (
+                  src[ni] === Cell.Seed &&
+                  (srcKind[ni] as number) === myKind &&
+                  (srcAtp[ni] as number) > 180
+                ) {
+                  next.atp[i] = Math.min(255, na + 12);
+                  break;
+                }
+              }
+            }
             // §16.1 Мембрана: Тень ранит, голод точит, покой лечит.
             let shadowNear = false;
             if (sh) {

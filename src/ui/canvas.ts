@@ -15,6 +15,7 @@ import { paintChronicle } from '../lens/lens4';
 import { paintMycelium } from '../lens/lens5';
 import type { LensId } from '../lens/switcher';
 import type { Cluster } from '../phi/clusters';
+import type { FormTie } from '../phi/politics';
 
 // Все цвета поля приходят из активной темы (ui/themes.ts).
 type Rgb = [number, number, number];
@@ -222,6 +223,7 @@ export class FieldRenderer {
     heat: Float32Array | null = null,
     aim: { x: number; y: number; rgb: [number, number, number] } | null = null,
     shadow: { x: number; y: number } | null = null,
+    ties: FormTie[] = [],
   ): void {
     if (lens === 4 && heat) paintChronicle(this.cellCtx, this.image, heat);
     else if (lens === 5) paintMycelium(this.cellCtx, this.image, state.signal, state.spike);
@@ -249,7 +251,7 @@ export class FieldRenderer {
       ctx.globalAlpha = 0.18;
       ctx.drawImage(this.cellCanvas, originX, originY, GRID_W * s, GRID_H * s);
       ctx.globalAlpha = 1;
-      drawLens2(ctx, { originX, originY, scale: s }, clusters);
+      drawLens2(ctx, { originX, originY, scale: s }, clusters, ties);
     } else {
       // Линза Разума: настоящее тускнеет, будущее проступает бирюзой.
       drawLens3(

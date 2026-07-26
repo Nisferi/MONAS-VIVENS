@@ -13,7 +13,10 @@ mkdir "$TMP/future"
 cp src/future/threat.ts src/future/horizon.ts src/future/events.ts "$TMP/future/"
 find "$TMP" -name '*.ts' -exec sed -i -E "s|from '(\.\.?/[^']+)'|from '\1.js'|g" {} +
 
-npx tsc "$TMP"/*/*.ts --outDir "$TMP/out" \
-  --module nodenext --moduleResolution nodenext --target es2022 --strict
+# tsc запускаем из $TMP: новый TS (TS5112) не любит tsconfig.json в cwd
+# при файлах в командной строке.
+ROOT="$(pwd)"
+(cd "$TMP" && npx --prefix "$ROOT" tsc ./*/*.ts --outDir out \
+  --module nodenext --moduleResolution nodenext --target es2022 --strict)
 
 node scripts/golden.mjs "$TMP/out" "${1:-}"

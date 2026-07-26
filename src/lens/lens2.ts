@@ -4,6 +4,7 @@
  */
 import { MIN_FORM_SIZE, type Cluster } from '../phi/clusters';
 import { STABLE_AGE } from '../phi/mnemosyne';
+import type { FormTie } from '../phi/politics';
 
 /** Дальше этого расстояния (в клетках) нить Филии не видна. */
 const THREAD_REACH = 18;
@@ -20,11 +21,33 @@ export function drawLens2(
   ctx: CanvasRenderingContext2D,
   t: LensTransform,
   clusters: Cluster[],
+  ties: FormTie[] = [],
 ): void {
   const nodes = clusters.filter((c) => c.size >= MIN_FORM_SIZE);
 
   const px = (cx: number) => t.originX + cx * t.scale;
   const py = (cy: number) => t.originY + cy * t.scale;
+
+  // §16.6 Политика: союзы — золотые узы, войны — багровые молнии между формами.
+  const byId = new Map(clusters.map((c) => [c.id, c]));
+  for (const tie of ties) {
+    const a = byId.get(tie.a);
+    const b = byId.get(tie.b);
+    if (!a || !b) continue;
+    ctx.lineWidth = Math.max(2, t.scale * 0.3);
+    if (tie.relation === 'ally') {
+      ctx.strokeStyle = 'rgba(120, 255, 200, 0.75)';
+      ctx.setLineDash([]);
+    } else {
+      ctx.strokeStyle = 'rgba(255, 80, 60, 0.8)';
+      ctx.setLineDash([t.scale * 0.6, t.scale * 0.4]);
+    }
+    ctx.beginPath();
+    ctx.moveTo(px(a.cx), py(a.cy));
+    ctx.lineTo(px(b.cx), py(b.cy));
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
   // Нити Филии между близкими узлами.
   ctx.lineCap = 'round';
