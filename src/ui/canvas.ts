@@ -325,6 +325,7 @@ export class FieldRenderer {
     if (cell === Cell.Signal) return f.signal;
     if (cell === Cell.Ash) return f.ash;
     if (cell === Cell.Spore) return f.spore;
+    if (cell === Cell.Devourer) return f.devourer;
     // Пустая клетка показывает рельеф под собой.
     const land = state.terrain[i];
     if (land === Terrain.Crystal) return f.crystal;

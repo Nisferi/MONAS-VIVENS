@@ -41,6 +41,8 @@ export interface Me {
   threats: ThreatWindow[];
   /** Редкие события судьбы: кометный посев, год тишины (из seed). */
   events: WorldEvent[];
+  /** §15.3 Пожиратели: есть ли в этом мире вторая трофическая ступень. */
+  devourers: boolean;
 }
 
 export interface WorldEvent {
@@ -61,6 +63,7 @@ export const DEFAULT_ME: Me = {
   will: 5,
   threats: [],
   events: [],
+  devourers: false,
 };
 
 export const ME_LIMITS = {
@@ -94,6 +97,16 @@ const EMIT_STRESS = 0.7;
 const QUORUM_AGE = 12;
 const QUORUM_STRESS = 1.6;
 const QUORUM_LOOKAHEAD = 60;
+/*
+ * §15.3 Пожиратели. Классика Лотки–Вольтерры на решётке:
+ * хищник ест Семя рядом и плодится от сытости, без пищи голодает и гибнет.
+ * age у Пожирателя — счётчик голода.
+ */
+const DEVOURER_STARVE = 30; // тиков без еды до гибели
+const DEVOURER_BREED = 3; // столько соседних Семян — и он делится
+const DEVOURER_DIGEST = 4; // тиков пищеварения между трапезами
+const DEVOURER_ARRIVAL = 700; // первый приход хищников в мир
+const DEVOURER_WAVE = 800; // и далее волнами — жизнь не забывает про голод
 let emitBuf = new Float32Array(0);
 
 onGridResize(() => {
@@ -391,6 +404,74 @@ export function tick(state: WorldState, me: Me): WorldState {
           next.atp[i] = 0;
           next.integ[i] = 0;
         }
+      } else if (cell === Cell.Devourer) {
+        // §15.3 Пожиратель: считает добычу вокруг.
+        let prey = -1;
+        let preyCount = 0;
+        for (let k = 0; k < 8; k++) {
+          const ni = birthNeigh[k] as number;
+          if (src[ni] === Cell.Seed) {
+            preyCount++;
+            if (prey < 0) prey = ni;
+          }
+        }
+        const hunger = srcAge[i] ?? 0;
+        // Добыча рядом, но пищеварение не прошло — хищник ждёт у стола.
+        if (preyCount > 0 && hunger < DEVOURER_DIGEST) {
+          next.age[i] = hunger + 1;
+        } else if (preyCount > 0) {
+          // Съел: добыча обращается в Прах, голод обнуляется.
+          if (prey >= 0 && next.cells[prey] === Cell.Seed) {
+            next.cells[prey] = Cell.Ash;
+            next.age[prey] = 0;
+            next.atp[prey] = 0;
+            next.integ[prey] = 0;
+          }
+          next.age[i] = 0;
+          // Сытость плодит: при обилии добычи — и то не всегда (детерминированно).
+          const bh = (Math.imul(i ^ 0x51ed, 2654435761) ^ Math.imul(state.tick + 1, 40503)) >>> 0;
+          if (preyCount >= DEVOURER_BREED && bh % 4 === 0) {
+            for (let k = 0; k < 8; k++) {
+              const ni = birthNeigh[k] as number;
+              if (
+                (next.cells[ni] === Cell.Empty || next.cells[ni] === Cell.Ash) &&
+                terrain[ni] !== Terrain.Crystal
+              ) {
+                next.cells[ni] = Cell.Devourer;
+                next.age[ni] = 0;
+                break;
+              }
+            }
+          }
+        } else {
+          // Голод гонит с места: хищник идёт на запах жизни (сигнальное поле).
+          const h = hunger + 1;
+          let step = -1;
+          let bestSig = sig[i] as number;
+          for (let k = 0; k < 8; k++) {
+            const ni = birthNeigh[k] as number;
+            if (
+              (next.cells[ni] === Cell.Empty || next.cells[ni] === Cell.Ash) &&
+              terrain[ni] !== Terrain.Crystal &&
+              (sig[ni] as number) > bestSig
+            ) {
+              bestSig = sig[ni] as number;
+              step = ni;
+            }
+          }
+          if (step >= 0) {
+            // Переход: голод несём с собой.
+            next.cells[step] = Cell.Devourer;
+            next.age[step] = h;
+            next.cells[i] = Cell.Empty;
+            next.age[i] = 0;
+          } else if (h >= DEVOURER_STARVE) {
+            next.cells[i] = Cell.Empty;
+            next.age[i] = 0;
+          } else {
+            next.age[i] = h;
+          }
+        }
       } else if (cell === Cell.Spore) {
         // Спора ждёт сытости — и прорастает, помня свой род и заряд.
         if (sprouting) {
@@ -445,6 +526,41 @@ export function tick(state: WorldState, me: Me): WorldState {
           next.atp[ii] = 0;
           next.integ[ii] = 0;
           next.spike[ii] = 0;
+        }
+      }
+    }
+  }
+
+  // §15.3 Приход Пожирателей: когда жизнь окрепла, у неё появляется хищник.
+  if (
+    me.devourers &&
+    state.tick >= DEVOURER_ARRIVAL &&
+    (state.tick - DEVOURER_ARRIVAL) % DEVOURER_WAVE === 0
+  ) {
+    const h0 = Math.imul(state.tick ^ 0xdeadbee, 2654435761) >>> 0;
+    let placed = 0;
+    for (let k = 0; k < 900 && placed < 8; k++) {
+      const hk = Math.imul(h0 ^ (k + 1), 40503) >>> 0;
+      const ii = hk % (GRID_W * GRID_H);
+      // Сажаем рядом с добычей — иначе хищник умрёт, не начав.
+      if (next.cells[ii] === Cell.Empty && terrain[ii] !== Terrain.Crystal) {
+        let hasPrey = false;
+        const x0 = ii % GRID_W;
+        const y0 = (ii / GRID_W) | 0;
+        for (let dy = -1; dy <= 1 && !hasPrey; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = (x0 + dx + GRID_W) % GRID_W;
+            const ny = (y0 + dy + GRID_H) % GRID_H;
+            if (next.cells[ny * GRID_W + nx] === Cell.Seed) {
+              hasPrey = true;
+              break;
+            }
+          }
+        }
+        if (hasPrey) {
+          next.cells[ii] = Cell.Devourer;
+          next.age[ii] = 0;
+          placed++;
         }
       }
     }

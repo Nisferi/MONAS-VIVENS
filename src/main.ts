@@ -132,6 +132,8 @@ const namedForms = new Map<number, NamedForm>();
 let dawnSeen = false;
 /** Первый эндосимбиоз уже случился? (§16.3) */
 let symbiosisSeen = false;
+/** Пожиратели уже приходили? (§15.3) */
+let devourersSeen = false;
 /** Активная глава кампании «Эоны». */
 let activeEon: Eon | null = null;
 /** Обет партии (§15.2). */
@@ -272,6 +274,18 @@ function measure(): void {
       if (f.diedTick === null && !present.has(f.id)) {
         f.diedTick = world.tick;
         hud.toast(`${f.name} больше нет. Летопись запомнит.`);
+      }
+    }
+
+    // §15.3 Пожиратели: первое пришествие хищников.
+    if (!devourersSeen && me.devourers) {
+      for (let i = 0; i < world.cells.length; i++) {
+        if (world.cells[i] === Cell.Devourer) {
+          devourersSeen = true;
+          hud.toast('Пришли Пожиратели — у жизни появился хищник.');
+          sound.event('storm');
+          break;
+        }
       }
     }
 
@@ -443,6 +457,7 @@ function startRun(
   milestones.namedForms = [];
   dawnSeen = false;
   symbiosisSeen = false;
+  devourersSeen = false;
   breath.reset();
   activeVow = vow;
   lastGesture = null;

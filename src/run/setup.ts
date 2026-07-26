@@ -80,7 +80,13 @@ export function makeRun(
   mode: RunMode = 'flow',
 ): RunConfig {
   const seed = hashSeed(`${seedText}:${biome}:${archetype}:${size}:${mode}`);
-  const me: Me = { ...DEFAULT_ME, threats: threatsFromSeed(seed), events: eventsFromSeed(seed) };
+  const me: Me = {
+    ...DEFAULT_ME,
+    threats: threatsFromSeed(seed),
+    events: eventsFromSeed(seed),
+    // §15.3 Пожиратели приходят не в каждый мир — судьба решает (≈половина).
+    devourers: (seed & 0x40) !== 0,
+  };
   let density = 0.18;
   let startEnergy = 70;
   let mindPhi = 25;
