@@ -301,6 +301,24 @@
     }
     #budgetstat { color: var(--turquoise); font-weight: bold; }
     #breathstat { color: var(--gold); font-weight: bold; }
+    #demiurge {
+      position: fixed;
+      left: 50%;
+      bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+      transform: translateX(-50%);
+      display: none;
+      background: var(--panel);
+      border: 1px solid rgba(200, 120, 255, 0.5);
+      border-radius: 10px;
+      color: #d9b8ff;
+      font-size: 12px;
+      font-style: italic;
+      padding: 6px 14px;
+      pointer-events: none;
+      max-width: 90vw;
+      text-align: center;
+    }
+    #demiurge.show { display: block; }
     #breathstat.low { color: #ff5a3c; }
 
     /* Скраббер времени (линза Разума) */

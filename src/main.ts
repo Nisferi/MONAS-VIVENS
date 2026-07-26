@@ -30,6 +30,7 @@ import { discoverForm, loadLayoutBest, loadWeeklyBest, saveLayoutBest, saveTrial
 import { currentWeekly } from './run/weekly';
 import { EONS, eonComplete, eonsProgress, type Eon } from './run/eons';
 import { BreathPool, COST } from './run/breath';
+import { Demiurge, judgeContest } from './run/demiurge';
 import { vowMultiplier, vowVerdict, type VowId } from './run/vows';
 import {
   HEARTH_TPS, clearHearth, clearResume, elapsedTicks, eternalThreats, fmtAbsence,
@@ -103,6 +104,7 @@ const BREATH_SESSION_MS = 10 * 60 * 1000;
 const tracker = new ClusterTracker();
 const politics = new PoliticsTracker();
 const breath = new BreathPool();
+const demiurge = new Demiurge();
 const neikosMeter = new NeikosMeter();
 const lenses = new LensSwitcher();
 const forecaster = new Forecaster();
@@ -139,6 +141,8 @@ let devourersSeen = false;
 let activeEon: Eon | null = null;
 /** Обет партии (§15.2). */
 let activeVow: VowId = 'none';
+/** §15.7 «Спор Богов»: партия против Демиурга. */
+let contestMode = false;
 /** Откат последнего жеста: посев или правка Ме. */
 let lastGesture:
   | { kind: 'sow'; i: number; budget: 'sower' | PieceKind | null }
@@ -224,6 +228,20 @@ function measure(): void {
 
   // Эволюция (Ярус 3): отчёт о дрейфе осторожности — скан раз в 10 тиков.
   if (world.tick % 10 === 0) reportGeneDrift();
+
+  // §15.7 Демиург: соперник думает и ходит (в открытую).
+  if (contestMode && !player) {
+    // Считаем силу игрока, чтобы соперник мог реагировать на отставание.
+    let rival = 0;
+    for (let i = 0; i < world.cells.length; i++) {
+      if (world.cells[i] === Cell.Seed && world.kind[i] !== demiurge.strain) rival++;
+    }
+    const move = demiurge.think(world, me, report.phi, rival);
+    if (move) {
+      hud.toast(move.text);
+      forecaster.invalidate();
+    }
+  }
 
   // Политика форм (§16.6): союзы и войны — скан раз в 5 тиков.
   if (world.tick % 5 === 0) {
@@ -462,6 +480,7 @@ function startRun(
   symbiosisSeen = false;
   devourersSeen = false;
   breath.reset();
+  contestMode = false;
   activeVow = vow;
   lastGesture = null;
   if (goals && !player) goals.show();
@@ -703,6 +722,13 @@ function finishRun(): void {
     }
   }
 
+  // §15.7 Спор Богов: чей род держит поле.
+  if (contestMode) {
+    const c = judgeContest(world, [0, 1, 3], demiurge.strain);
+    trialResult = trialResult ? `${trialResult} · ${c.verdict}` : c.verdict;
+    if (c.player > c.demiurge) score = Math.round(score * 1.5);
+  }
+
   // §15.2 Обет: исполненный удваивает счёт, нарушенный — карает.
   const verdict = vowVerdict(activeVow, ending.id);
   if (verdict) {
@@ -921,6 +947,15 @@ function startEon(eon: Eon): void {
   hud.toast(`Эон ${eon.id} «${eon.name}»: ${eon.goalText}.`);
 }
 
+function startContest(): void {
+  startRun(`спор-${Date.now() % 1000000}`, 'swamp', 'clay', 64, 'flow');
+  contestMode = true;
+  // Соперник ведёт Аметист (род 2) во второй провинции; игрок — Огонь и Нефрит.
+  demiurge.reset(2, 1);
+  brushStrain = 0;
+  hud.toast('Спор Богов: Демиург ведёт Род Аметиста. Он играет в открытую.');
+}
+
 function resumeRun(): void {
   const save = loadResume();
   if (!save) return;
@@ -995,6 +1030,14 @@ function showStart(): void {
           const next = EONS[Math.min(eonsProgress(), EONS.length - 1)] as Eon;
           screens.hide();
           startEon(next);
+        },
+      },
+      {
+        icon: '☯', label: 'Спор Богов — соперник',
+        desc: 'Демиург ведёт свой род и играет в открытую',
+        onClick: () => {
+          screens.hide();
+          startContest();
         },
       },
       {
@@ -1495,6 +1538,7 @@ function frame(now: number): void {
   plantWrap.classList.toggle('show', !!aiming);
   hud.update(world, report, lenses.unlocked3 ? horizonNow() : null, STAGE_NAMES[stage]);
   hud.setBreath(breath.current);
+  hud.setDemiurge(contestMode && running ? `☯ Демиург: ${demiurge.intent}` : null);
   requestAnimationFrame(frame);
 }
 

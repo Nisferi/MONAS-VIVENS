@@ -83,6 +83,8 @@ export class Hud {
   private lastStatsBottom = 0;
   private lastStatsSig = '';
   private lastBreath = -1;
+  private demiurgeEl!: HTMLElement;
+  private lastDemiurge: string | null = null;
   private decreeSelects: HTMLSelectElement[] = [];
   private lastDecree: Record<number, string> = {};
 
@@ -231,6 +233,14 @@ export class Hud {
   /** Горсть Сеятеля: сколько Семян осталось расставить (null — скрыть). */
   setBudget(left: number | null): void {
     this.budgetEl.textContent = left === null ? '' : `Горсть ✦${left}`;
+  }
+
+  /** §15.7 Намерение Демиурга — соперник играет в открытую. */
+  setDemiurge(text: string | null): void {
+    if (text === this.lastDemiurge) return;
+    this.lastDemiurge = text;
+    this.demiurgeEl.textContent = text ?? '';
+    this.demiurgeEl.classList.toggle('show', !!text);
   }
 
   /** §15.1 Дыхание Творца: сила бога на вмешательства. */
@@ -439,6 +449,9 @@ export class Hud {
     this.quoteEl = document.createElement('div');
     this.quoteEl.id = 'quote';
     document.body.append(this.quoteEl);
+    this.demiurgeEl = document.createElement('div');
+    this.demiurgeEl.id = 'demiurge';
+    document.body.append(this.demiurgeEl);
 
     // Скраббер времени: путь взгляда по прогнозу (виден только в линзе Ⅲ).
     this.scrubEl = document.createElement('div');
