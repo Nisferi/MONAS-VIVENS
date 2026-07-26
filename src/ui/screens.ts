@@ -7,6 +7,7 @@ import {
 } from '../run/setup';
 import { TRIALS } from '../run/trials';
 import { LAYOUTS, STAKE_INFO, dailyLayout, type Stake } from '../run/layouts';
+import { VOWS, type VowId } from '../run/vows';
 import { loadLayoutBest } from '../platform/storage';
 import { loadTrialStars } from '../platform/storage';
 import { THEMES, activeTheme, applyTheme } from './themes';
@@ -23,6 +24,8 @@ export interface StartChoice {
   /** Выбранный расклад и ставка (путь «Расклад»). */
   layoutId: string | null;
   stake: Stake;
+  /** Обет партии (§15.2). */
+  vow: VowId;
 }
 
 export interface FinalData {
@@ -143,6 +146,7 @@ export class Screens {
     const daily = dailyLayout();
     let layoutId = daily.id;
     let stake: Stake = 'longevity';
+    let vow: VowId = 'none';
 
     const worldGroups = document.createElement('div');
     const trialGroup = document.createElement('div');
@@ -225,6 +229,16 @@ export class Screens {
     panel.append(layoutGroup);
     syncPath();
 
+    // Обет: концовка становится целью, а не результатом.
+    panel.append(
+      this.chipGroup(
+        'Обет',
+        VOWS.map((v) => ({ id: v.id, name: v.name, desc: v.desc })),
+        vow,
+        (id) => (vow = id as VowId),
+      ),
+    );
+
     // Стиль мира: применяется сразу — живой предпросмотр.
     panel.append(
       this.chipGroup(
@@ -256,6 +270,7 @@ export class Screens {
         trialId: path === 'trial' ? trialId : null,
         layoutId: path === 'layout' ? layoutId : null,
         stake,
+        vow,
       });
     });
     panel.append(start);

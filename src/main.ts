@@ -28,6 +28,8 @@ import { GoalsPanel } from './ui/goals';
 import { discoverForm, loadLayoutBest, loadWeeklyBest, saveLayoutBest, saveTrialStars, saveWeeklyBest } from './platform/storage';
 import { currentWeekly } from './run/weekly';
 import { EONS, eonComplete, eonsProgress, type Eon } from './run/eons';
+import { BreathPool, COST } from './run/breath';
+import { vowMultiplier, vowVerdict, type VowId } from './run/vows';
 import {
   HEARTH_TPS, clearHearth, clearResume, elapsedTicks, eternalThreats, fmtAbsence,
   loadHearth, loadResume, packWorld, restoreWorld, saveHearth, saveResume,
@@ -99,6 +101,7 @@ const BREATH_SESSION_MS = 10 * 60 * 1000;
 
 const tracker = new ClusterTracker();
 const politics = new PoliticsTracker();
+const breath = new BreathPool();
 const neikosMeter = new NeikosMeter();
 const lenses = new LensSwitcher();
 const forecaster = new Forecaster();
@@ -131,6 +134,8 @@ let dawnSeen = false;
 let symbiosisSeen = false;
 /** Активная глава кампании «Эоны». */
 let activeEon: Eon | null = null;
+/** Обет партии (§15.2). */
+let activeVow: VowId = 'none';
 /** Откат последнего жеста: посев или правка Ме. */
 let lastGesture:
   | { kind: 'sow'; i: number; budget: 'sower' | PieceKind | null }
@@ -161,6 +166,8 @@ function measure(): void {
   report = computePhi(clusters, neikos);
 
   phiIntegral += report.phi;
+  // §15.1 Дыхание Творца: мир, видящий себя, кормит своего бога.
+  breath.feed(report.phi);
 
   aliveCount = 0;
   for (let i = 0; i < world.cells.length; i++) {
@@ -372,6 +379,7 @@ function startRun(
   trialId: string | null = null,
   layoutPick: { id: string; stake: Stake } | null = null,
   echoOverride: number[] | null = null,
+  vow: VowId = 'none',
 ): void {
   hearthMode = false;
   hearthCatchUp = 0;
@@ -435,6 +443,8 @@ function startRun(
   milestones.namedForms = [];
   dawnSeen = false;
   symbiosisSeen = false;
+  breath.reset();
+  activeVow = vow;
   lastGesture = null;
   if (goals && !player) goals.show();
   lastStormIndex = -1;
@@ -637,7 +647,7 @@ function finishRun(): void {
     will: me.will,
   });
 
-  const score = computeScore({
+  let score = computeScore({
     phi: report.phi,
     survived,
     horizonMax,
@@ -649,11 +659,6 @@ function finishRun(): void {
     sower: cfg.mode === 'sower',
   });
 
-  const isRecord = player ? false : saveBest(score);
-  // Мир недели: свой зачёт до понедельника.
-  if (!player && cfg.seedText === currentWeekly().seedText) {
-    if (saveWeeklyBest(cfg.seedText, score)) hud.toast('Лучший результат недели!');
-  }
   const chronicle = writeChronicle(milestones, ending, cfg);
 
   // Расклад: счёт по ставке.
@@ -677,6 +682,20 @@ function finishRun(): void {
           ? `Испытание «${trial.name}»: ${'★'.repeat(stars)}`
           : `Испытание «${trial.name}» не пройдено: Φ ${report.phi.toFixed(1)} из ${trial.goalPhi}`;
     }
+  }
+
+  // §15.2 Обет: исполненный удваивает счёт, нарушенный — карает.
+  const verdict = vowVerdict(activeVow, ending.id);
+  if (verdict) {
+    score = Math.round(score * vowMultiplier(activeVow, ending.id));
+    trialResult = trialResult ? `${trialResult} · ${verdict}` : verdict;
+  }
+
+  // Рекорды считаем ПОСЛЕ суда обета — удвоение должно попасть в таблицу.
+  const isRecord = player ? false : saveBest(score);
+  // Мир недели: свой зачёт до понедельника.
+  if (!player && cfg.seedText === currentWeekly().seedText) {
+    if (saveWeeklyBest(cfg.seedText, score)) hud.toast('Лучший результат недели!');
   }
 
   // Сцена концовки — образ перед летописью.
@@ -738,6 +757,10 @@ const hud = new Hud(me, {
     const old = forecaster.latest;
     const lastFrame = old?.frames[old.frames.length - 1];
     if (lastFrame) altGhost = { cells: lastFrame.cells, until: performance.now() + 6000 };
+    if (!breath.spend('me')) {
+      hud.toast(`Не хватает Дыхания на правку закона (нужно ${COST.me}).`);
+      return;
+    }
     lastGesture = { kind: 'me', prev: { ...me } };
     // Поля энергии и угрозы ползунками не трогаются — переносим из текущих Ме.
     me = { ...me, birthMin: next.birthMin, birthMax: next.birthMax,
@@ -798,9 +821,15 @@ const hud = new Hud(me, {
 const tabletUI = new TabletUI(hud.tabletsPane, tabletEngine, {
   onCarve(condition, action) {
     if (player || breathMode) return 'Сейчас руки убраны.';
+    if (!breath.canAfford('tablet')) {
+      const msg = `Не хватает Дыхания на высечение (нужно ${COST.tablet}).`;
+      hud.toast(msg);
+      return msg;
+    }
     const err = tabletEngine.carve(condition, action, world);
     if (err) hud.toast(err);
     else {
+      breath.spend('tablet');
       recorder.record({ t: world.tick, k: 'carve', c: condition, a: action });
       hud.toast('Табличка высечена. Она спит и ждёт своего часа.');
     }
@@ -842,6 +871,7 @@ function showSetup(): void {
         choice.seedText, choice.biome, choice.archetype, choice.size, choice.mode,
         null, choice.trialId,
         choice.layoutId ? { id: choice.layoutId, stake: choice.stake } : null,
+        null, choice.vow,
       ),
     showStart,
   );
@@ -1086,6 +1116,13 @@ function sowAt(cssX: number, cssY: number, pointerType = 'mouse'): void {
   const c = renderer.cellAt(cssX, cssY);
   if (!c) return;
 
+  // §15.1 Кисть в Потоке стоит Дыхания — рука бога не бесплатна.
+  if (sowBudget === null && !layoutPool) {
+    if (!breath.spend('sow')) {
+      hud.toast(`Не хватает Дыхания (нужно ${COST.sow}). Расти Φ — она кормит.`);
+      return;
+    }
+  }
   const spots = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const;
   for (const [dx, dy] of spots) {
     const x = (c.x + dx + GRID_W) % GRID_W;
@@ -1140,6 +1177,7 @@ function undoGesture(): void {
     }
   } else {
     me = lastGesture.prev;
+    breath.refund('me');
     recorder.popLast('me');
     forecaster.invalidate();
     refreshForecast(true);
@@ -1418,6 +1456,7 @@ function frame(now: number): void {
   }
   plantWrap.classList.toggle('show', !!aiming);
   hud.update(world, report, lenses.unlocked3 ? horizonNow() : null, STAGE_NAMES[stage]);
+  hud.setBreath(breath.current);
   requestAnimationFrame(frame);
 }
 

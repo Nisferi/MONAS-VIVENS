@@ -60,6 +60,7 @@ export class Hud {
   private brushBtn!: HTMLButtonElement;
   private strainBtn!: HTMLButtonElement;
   private budgetEl!: HTMLElement;
+  private breathEl!: HTMLElement;
   private quoteEl!: HTMLElement;
   private quoteText = '';
   private scrubEl!: HTMLElement;
@@ -76,6 +77,7 @@ export class Hud {
   private lastTick = 0;
   private lastStatsBottom = 0;
   private lastStatsSig = '';
+  private lastBreath = -1;
 
   private statsEl!: HTMLElement;
 
@@ -99,6 +101,8 @@ export class Hud {
     this.seedsEl = document.createElement('span');
     this.horizonEl = document.createElement('span');
     this.horizonEl.id = 'horizonstat';
+    this.breathEl = document.createElement('span');
+    this.breathEl.id = 'breathstat';
     this.budgetEl = document.createElement('span');
     this.budgetEl.id = 'budgetstat';
     this.sparkCanvas = document.createElement('canvas');
@@ -106,8 +110,8 @@ export class Hud {
     this.sparkCanvas.width = 90;
     this.sparkCanvas.height = 22;
     root.append(
-      this.phiEl, this.sparkCanvas, this.energyEl, this.stageEl, this.seedsEl,
-      this.tickEl, this.horizonEl, this.budgetEl,
+      this.phiEl, this.sparkCanvas, this.breathEl, this.energyEl, this.stageEl,
+      this.seedsEl, this.tickEl, this.horizonEl, this.budgetEl,
     );
   }
 
@@ -220,6 +224,15 @@ export class Hud {
   /** Горсть Сеятеля: сколько Семян осталось расставить (null — скрыть). */
   setBudget(left: number | null): void {
     this.budgetEl.textContent = left === null ? '' : `Горсть ✦${left}`;
+  }
+
+  /** §15.1 Дыхание Творца: сила бога на вмешательства. */
+  setBreath(value: number): void {
+    const v = Math.floor(value);
+    if (v === this.lastBreath) return;
+    this.lastBreath = v;
+    this.breathEl.textContent = `☉ ${v}`;
+    this.breathEl.classList.toggle('low', v < 12);
   }
 
   /** Произвольный текст горсти (режим «Расклад»). */
