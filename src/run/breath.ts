@@ -7,13 +7,16 @@
  * но может опоздать к шторму.
  */
 
-export type Spend = 'sow' | 'me' | 'tablet';
+export type Spend = 'sow' | 'me' | 'tablet' | 'decree';
 
 export const COST: Record<Spend, number> = {
   sow: 2, // посев креста
   me: 8, // правка одного закона Ме
   tablet: 12, // высечение Таблички
+  decree: 20, // указ провинции (§15.4): локальный закон дороже всего
 };
+
+export const DECREE_COST = 20;
 
 export const BREATH_MAX = 120;
 export const BREATH_START = 30;

@@ -43,16 +43,17 @@ export class Forecaster {
     const kind = state.kind.slice();
     const gene = state.gene.slice();
     const terrain = state.terrain.slice();
+    const province = state.province.slice();
     const signal = state.signal.slice();
     this.worker.postMessage(
       {
-        cells, age, kind, gene, terrain, signal,
+        cells, age, kind, gene, terrain, province, signal,
         baseTick: state.tick,
         energy: state.energy,
         me, steps,
         frames: FORECAST_FRAMES,
       },
-      [cells.buffer, age.buffer, kind.buffer, gene.buffer, terrain.buffer, signal.buffer],
+      [cells.buffer, age.buffer, kind.buffer, gene.buffer, terrain.buffer, province.buffer, signal.buffer],
     );
     return true;
   }

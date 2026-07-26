@@ -80,6 +80,8 @@ export interface WorldState {
   gene: Uint8Array;
   /** Рельеф (Terrain): вечен, не меняется тиками — клонируется ссылкой. */
   terrain: Uint8Array;
+  /** Провинция клетки (§15.4): вечна, как рельеф — клонируется ссылкой. */
+  province: Uint8Array;
   /** Сигнальное поле — «грибница»: химия стресса/присутствия (Ярус 1 разума). */
   signal: Float32Array;
   /** АТФ клетки 0..255 — личный запас энергии (живая клетка, §16.1). */
@@ -108,6 +110,7 @@ export function createWorld(
   density: number,
   energy = 100,
   terrain?: Uint8Array,
+  province?: Uint8Array,
 ): WorldState {
   const rng = mulberry32(seed);
   // Геному — отдельный поток: размещение клеток и родов не сдвигается,
@@ -140,6 +143,7 @@ export function createWorld(
     kind,
     gene,
     terrain: land,
+    province: province ?? new Uint8Array(GRID_SIZE),
     signal: new Float32Array(GRID_SIZE),
     atp,
     integ,
@@ -157,6 +161,7 @@ export function cloneWorld(state: WorldState): WorldState {
     kind: state.kind.slice(),
     gene: state.gene.slice(),
     terrain: state.terrain, // рельеф вечен — общая ссылка
+    province: state.province, // карта провинций вечна — общая ссылка
     signal: state.signal.slice(),
     atp: state.atp.slice(),
     integ: state.integ.slice(),
@@ -179,6 +184,7 @@ export function serializeWorld(state: WorldState): string {
     kind: Array.from(state.kind),
     gene: Array.from(state.gene),
     terrain: Array.from(state.terrain),
+    province: Array.from(state.province),
     atp: Array.from(state.atp),
     integ: Array.from(state.integ),
     mito: Array.from(state.mito),
@@ -194,6 +200,7 @@ export function deserializeWorld(json: string): WorldState {
     kind?: number[];
     gene?: number[];
     terrain?: number[];
+    province?: number[];
     atp?: number[];
     integ?: number[];
     mito?: number[];
@@ -206,6 +213,7 @@ export function deserializeWorld(json: string): WorldState {
     kind: raw.kind ? Uint8Array.from(raw.kind) : new Uint8Array(raw.cells.length),
     gene: raw.gene ? Uint8Array.from(raw.gene) : new Uint8Array(raw.cells.length),
     terrain: raw.terrain ? Uint8Array.from(raw.terrain) : new Uint8Array(raw.cells.length),
+    province: raw.province ? Uint8Array.from(raw.province) : new Uint8Array(raw.cells.length),
     // Сигнальное поле не сохраняем — оно отрастает заново за десяток тиков.
     signal: new Float32Array(raw.cells.length),
     atp: raw.atp ? Uint8Array.from(raw.atp) : new Uint8Array(raw.cells.length).fill(160),

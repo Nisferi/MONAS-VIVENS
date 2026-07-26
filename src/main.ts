@@ -8,6 +8,7 @@ import {
   createWorld, setGridSize, type WorldState,
 } from './core/grid';
 import { generateTerrain } from './core/terrain';
+import { DECREES, PROVINCES, PROVINCE_NAMES, generateProvinces, NEUTRAL_LAW } from './core/provinces';
 import { DEFAULT_ME, shadowAt, tick, type Me } from './core/rules';
 import { Forecaster } from './future/forecast';
 import { horizonTicks } from './future/horizon';
@@ -435,7 +436,9 @@ function startRun(
   renderer.rebuildGrid();
   me = { ...cfg.me };
   const land = generateTerrain(cfg.seed, cfg.terrain);
-  world = createWorld(cfg.seed, cfg.density, cfg.startEnergy, land);
+  const provMap = generateProvinces(cfg.seed);
+  world = createWorld(cfg.seed, cfg.density, cfg.startEnergy, land, provMap);
+  me.laws = Array.from({ length: PROVINCES }, () => ({ ...NEUTRAL_LAW }));
   heat = new Float32Array(world.cells.length);
 
   tracker.reset();
@@ -509,6 +512,7 @@ function startRun(
 
   aim = null;
   hud.resetRunUi();
+  hud.resetDecrees();
   hud.markLens(1);
   hud.setLensUnlocked(2, false);
   hud.setLensUnlocked(3, false);
@@ -830,6 +834,25 @@ const hud = new Hud(me, {
   onMuteToggle: () => sound.toggleMute(),
   onScrub(frac) {
     scrubFrac = frac;
+  },
+  // §15.4 Указ провинции: локальный закон за Дыхание.
+  onDecree(province, decreeId) {
+    if (player || breathMode) return 'Сейчас руки убраны.';
+    const decree = DECREES.find((d) => d.id === decreeId);
+    if (!decree) return 'Неведомый указ.';
+    if (decreeId !== 'none' && !breath.spend('decree')) {
+      const msg = `Не хватает Дыхания на указ (нужно ${COST.decree}).`;
+      hud.toast(msg);
+      return msg;
+    }
+    if (!me.laws || me.laws.length < PROVINCES) {
+      me.laws = Array.from({ length: PROVINCES }, () => ({ ...NEUTRAL_LAW }));
+    }
+    me.laws[province] = { ...decree.law };
+    forecaster.invalidate();
+    refreshForecast(true);
+    hud.toast(`${PROVINCE_NAMES[province]}: ${decree.name}.`);
+    return null;
   },
 });
 

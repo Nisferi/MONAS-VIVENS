@@ -246,6 +246,8 @@ export class FieldRenderer {
       if (lens === 1 && (s >= GRID_LINES_FROM || aim)) this.paintGrid(originX, originY, s);
       // §16.3 Носители митохондрий: тёмное ядро-точка, когда клетки крупны.
       if (lens === 1 && s >= 5) this.paintNuclei(state, originX, originY, s);
+      // §15.4 Границы провинций — тонкий пунктир: карта власти игрока.
+      if (lens === 1) this.paintProvinces(state, originX, originY, s);
     } else if (lens === 2) {
       // Линза Филии: клетки — лишь тень внизу, поверх — узлы и нити.
       ctx.globalAlpha = 0.18;
@@ -376,6 +378,32 @@ export class FieldRenderer {
       ctx.arc(x, y, r + m * s * 0.04, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  /** §15.4 Границы провинций: рисуем рёбра между разными областями. */
+  private paintProvinces(state: WorldState, originX: number, originY: number, s: number): void {
+    const prov = state.province;
+    if (prov.length !== GRID_W * GRID_H) return;
+    const { ctx } = this;
+    ctx.strokeStyle = 'rgba(200, 190, 255, 0.30)';
+    ctx.lineWidth = Math.max(1, s * 0.08);
+    ctx.beginPath();
+    for (let y = 0; y < GRID_H; y++) {
+      for (let x = 0; x < GRID_W; x++) {
+        const p = prov[y * GRID_W + x] as number;
+        // Правое ребро.
+        if (x + 1 < GRID_W && (prov[y * GRID_W + x + 1] as number) !== p) {
+          ctx.moveTo(originX + (x + 1) * s, originY + y * s);
+          ctx.lineTo(originX + (x + 1) * s, originY + (y + 1) * s);
+        }
+        // Нижнее ребро.
+        if (y + 1 < GRID_H && (prov[(y + 1) * GRID_W + x] as number) !== p) {
+          ctx.moveTo(originX + x * s, originY + (y + 1) * s);
+          ctx.lineTo(originX + (x + 1) * s, originY + (y + 1) * s);
+        }
+      }
+    }
+    ctx.stroke();
   }
 
   private paintGrid(originX: number, originY: number, s: number): void {

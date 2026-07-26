@@ -12,6 +12,7 @@ import {
   type WorldState, cloneWorld, onGridResize,
 } from './grid';
 import { SPRING_INFLUX } from './terrain';
+import { NEUTRAL_LAW, type LocalLaw } from './provinces';
 
 /** Окно угрозы: приток гаснет, расход растёт. */
 export interface ThreatWindow {
@@ -43,6 +44,8 @@ export interface Me {
   events: WorldEvent[];
   /** §15.3 Пожиратели: есть ли в этом мире вторая трофическая ступень. */
   devourers: boolean;
+  /** §15.4 Локальные законы провинций (индекс = номер провинции). */
+  laws: LocalLaw[];
 }
 
 export interface WorldEvent {
@@ -64,6 +67,7 @@ export const DEFAULT_ME: Me = {
   threats: [],
   events: [],
   devourers: false,
+  laws: [],
 };
 
 export const ME_LIMITS = {
@@ -247,6 +251,8 @@ export function tick(state: WorldState, me: Me): WorldState {
       }
     }
   }
+  const prov = state.province;
+  const laws = me.laws ?? [];
   if (emitBuf.length !== sig.length) emitBuf = new Float32Array(sig.length);
   emitBuf.set(sig);
   // Живая клетка (§16, ярус A): спайки пересчитываются каждый тик с нуля.
@@ -268,6 +274,11 @@ export function tick(state: WorldState, me: Me): WorldState {
       const i = row + x;
       const cell = src[i];
       const land = terrain[i];
+      // §15.4 Локальный закон провинции — поверх общего Ме.
+      const law = laws.length > 0 ? (laws[prov[i] as number] ?? NEUTRAL_LAW) : NEUTRAL_LAW;
+      const locSurviveMin = Math.max(0, me.surviveMin - law.survive);
+      const locSurviveMax = surviveMax + law.survive;
+      const locBirthMax = me.birthMax + law.birth;
       if (land === Terrain.Spring) springs++;
       // Кристалл — стена: жизни на нём нет и не будет.
       if (land === Terrain.Crystal) continue;
@@ -297,10 +308,10 @@ export function tick(state: WorldState, me: Me): WorldState {
       if (cell === Cell.Seed) {
         alive++;
         // Эмиссия в грибницу: на грани гибели — тревога, иначе тихое присутствие.
-        const onEdge = n <= me.surviveMin || n > surviveMax;
+        const onEdge = n <= locSurviveMin || n > locSurviveMax;
         emitBuf[i] = (emitBuf[i] as number) + (onEdge ? EMIT_STRESS : EMIT_PRESENCE);
         const age = srcAge[i] ?? 0;
-        if (n >= me.surviveMin && n <= surviveMax) {
+        if (n >= locSurviveMin && n <= locSurviveMax) {
           // Кворум: зрелая форма, чующая шторм, прячется в Спору. Геном решает,
           // насколько рано: осторожный спит легко, смелый почти никогда —
           // и потому гибнет в шторм. Так отбор поднимает осторожность.
@@ -371,7 +382,7 @@ export function tick(state: WorldState, me: Me): WorldState {
                     ? Word.Call
                     : Word.Self;
           }
-        } else if (starving && n >= me.surviveMin - 1) {
+        } else if (starving && n >= locSurviveMin - 1) {
           // Голодная смерть на грани — жизнь сворачивается в Спору, не в Прах.
           next.cells[i] = Cell.Spore;
           next.age[i] = 0;
@@ -480,7 +491,7 @@ export function tick(state: WorldState, me: Me): WorldState {
           next.integ[i] = 200;
           next.spike[i] = Word.Self;
         }
-      } else if (cell !== Cell.Signal && n >= me.birthMin && n <= me.birthMax) {
+      } else if (cell !== Cell.Signal && n >= me.birthMin && n <= locBirthMax) {
         // Жизнь прорастает и сквозь Прах: тлен — след, не преграда.
         // Это сохраняет точную динамику Конвея при любом ashLifetime.
         next.cells[i] = Cell.Seed;

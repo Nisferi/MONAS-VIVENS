@@ -7,6 +7,8 @@ import { ME_LIMITS, type Me } from '../core/rules';
 import type { LensId } from '../lens/switcher';
 import type { PhiReport } from '../phi/phi';
 import { activeTheme } from './themes';
+import { DECREES, PROVINCES, PROVINCE_NAMES } from '../core/provinces';
+import { DECREE_COST } from '../run/breath';
 
 export interface HudCallbacks {
   onMeChange(me: Me): void;
@@ -27,6 +29,8 @@ export interface HudCallbacks {
   onMuteToggle(): boolean;
   /** Скраббер времени: доля пути к горизонту (0..1). */
   onScrub(frac: number): void;
+  /** §15.4 Указ провинции: вернуть текст ошибки или null при успехе. */
+  onDecree(province: number, decreeId: string): string | null;
 }
 
 /** Ползункам доступны только числовые законы (массив угроз — не для рук). */
@@ -72,12 +76,15 @@ export class Hud {
   /** Куда TabletUI вешает свой интерфейс (вкладка «Таблички»). */
   tabletsPane!: HTMLElement;
   private journalPane!: HTMLElement;
+  private landsPane!: HTMLElement;
   private sparkCanvas!: HTMLCanvasElement;
   private phiHistory: number[] = [];
   private lastTick = 0;
   private lastStatsBottom = 0;
   private lastStatsSig = '';
   private lastBreath = -1;
+  private decreeSelects: HTMLSelectElement[] = [];
+  private lastDecree: Record<number, string> = {};
 
   private statsEl!: HTMLElement;
 
@@ -309,8 +316,11 @@ export class Hud {
     this.journalPane.id = 'journal';
     panel.append(mePane, this.tabletsPane, this.journalPane);
 
+    this.landsPane = document.createElement('div');
+    panel.append(this.landsPane);
     const panes: [string, HTMLElement][] = [
       ['Ме', mePane],
+      ['Земли', this.landsPane],
       ['Таблички', this.tabletsPane],
       ['Журнал', this.journalPane],
     ];
@@ -331,6 +341,8 @@ export class Hud {
     (tabBtns[0] as HTMLButtonElement).classList.add('active');
     this.tabletsPane.style.display = 'none';
     this.journalPane.style.display = 'none';
+    this.landsPane.style.display = 'none';
+    this.buildLands();
 
     this.breakdownEl = document.createElement('div');
     this.breakdownEl.id = 'phibreak';
@@ -339,6 +351,43 @@ export class Hud {
     for (const spec of SLIDERS) {
       mePane.append(this.buildSlider(spec));
     }
+  }
+
+  /** §15.4 Земли: указ для каждой провинции. */
+  private buildLands(): void {
+    const hint = document.createElement('div');
+    hint.id = 'landshint';
+    hint.textContent = `Указ провинции стоит ${DECREE_COST} Дыхания. География — тоже закон.`;
+    this.landsPane.append(hint);
+    for (let p = 0; p < PROVINCES; p++) {
+      const row = document.createElement('div');
+      row.className = 'landrow';
+      const name = document.createElement('span');
+      name.className = 'landname';
+      name.textContent = PROVINCE_NAMES[p] ?? `Провинция ${p + 1}`;
+      const sel = document.createElement('select');
+      for (const d of DECREES) {
+        const o = document.createElement('option');
+        o.value = d.id;
+        o.textContent = `${d.name} — ${d.desc}`;
+        sel.append(o);
+      }
+      const prov = p;
+      sel.addEventListener('change', () => {
+        const err = this.cb.onDecree(prov, sel.value);
+        if (err) sel.value = this.lastDecree[prov] ?? 'none';
+        else this.lastDecree[prov] = sel.value;
+      });
+      row.append(name, sel);
+      this.landsPane.append(row);
+      this.decreeSelects.push(sel);
+    }
+  }
+
+  /** Сброс указов между партиями. */
+  resetDecrees(): void {
+    for (const s of this.decreeSelects) s.value = 'none';
+    this.lastDecree = {};
   }
 
   /** Журнал: память обо всех событиях партии. */
